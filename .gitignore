@@ -12,3 +12,6 @@ play2.mjs
 fps.mjs
 fps2.mjs
 takes/
+public/preview/
+preview.html
+src/preview.js
