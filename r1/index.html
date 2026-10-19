@@ -44,6 +44,8 @@
   #progress { width:220px; height:1px; background:rgba(232,226,212,.15); margin-top:26px; }
   #progress i { display:block; height:100%; width:0; background:var(--ink); transition:width .2s; }
   #end { display:none; }
+  #props { position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+  #props .prop { position:absolute; left:0; top:0; transform-origin:0 0; display:none; filter:brightness(.62) saturate(.85); }
   #pool { position:fixed; left:0; top:0; width:600px; height:600px; pointer-events:none; opacity:0; border-radius:50%;
     background:radial-gradient(circle, rgba(150,255,210,.22) 0%, rgba(90,200,160,.10) 35%, rgba(0,0,0,0) 70%); mix-blend-mode:screen; transition:opacity .4s; }
   #chapter { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); font-family:var(--serif); font-size:clamp(16px,2vw,22px); letter-spacing:.5em; color:var(--dim); opacity:0; transition:opacity .8s; pointer-events:none; z-index:3; }
@@ -58,14 +60,15 @@
   html.touch .touchonly { display:block; }
   html.touch .desk { display:none; }
 </style>
-  <script type="module" crossorigin src="./assets/main-BTHXa4ud.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/index-BZvdePE6.js">
+  <script type="module" crossorigin src="./assets/main-Dxs_G8uL.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/index-BMj2ErFP.js">
 </head>
 <body>
 <canvas id="c"></canvas>
 <canvas id="grain" class="layer"></canvas>
 <div id="vignette" class="layer"></div>
 <div id="pool"></div>
+<div id="props"></div>
 <div id="black" class="layer"></div>
 <div id="chapter"></div>
 <div id="fade" class="layer"></div>
