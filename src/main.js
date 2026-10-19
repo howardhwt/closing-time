@@ -227,6 +227,7 @@ async function interact() {
 async function finale() {
   if (state === 'end') return;
   state = 'end'; frozen = true; objective(''); promptText('');
+  await wait(750);
   black(1); fade(drone, 0, 300);
   await wait(500);
   who.currentTime = 2.4; who.play();
