@@ -14,6 +14,12 @@ export function saveLang(l) { try { localStorage.setItem(KEY, l); } catch { /* i
 
 export const T = {
   en: {
+    vo2: 'The second night, same time, the phone rang again.',
+    s_ring: '[the phone rings]', s_mahjong: '[mahjong tiles behind the green door]', s_tube: '[the tube light buzzes]',
+    s_gate: '[a gate rattles. Nobody there]', s_stop: '[the mahjong stops]', s_crack: '[the door opens a crack. Black inside]',
+    s_notes: '[paper slides across the floor]', s_latch: '[the door shuts]', s_steps: '[footsteps behind you]', s_stepsStop: '[they stop when you stop]',
+    s_count: '[counting notes]', p_pickup: '[E] Pick up the money', o_back: 'Take the money back to the shop',
+    o_counter: 'Hand the money in at the till', p_hand: '[E] Hand in the money', n2: 'Night 2 coming soon', later: 'Closing up', s_till: '[he drops it in the till without looking]', present: 'Today', past: '1989',
     title: '收舖', titleSub: 'CLOSING TIME',
     intro1: '1989. A cha chaan teng in the New Territories.', intro2: 'One last delivery before closing.',
     enter: 'ENTER', loading: 'LOADING', again: 'PLAY AGAIN',
@@ -47,6 +53,12 @@ export const T = {
     walk: 'WALK', act: 'INTERACT', desktop: 'Plays best on desktop with headphones.',
   },
   'zh-CN': {
+    vo2: '「第二晚,同一个钟点,电话又响。」',
+    s_ring: '[电话响]', s_mahjong: '[绿门后面有人打麻将]', s_tube: '[光管嗡嗡响]',
+    s_gate: '[铁闸响了一下。没有人]', s_stop: '[麻将声停了]', s_crack: '[门开了一条缝。里面一片黑]',
+    s_notes: '[纸在地上滑出来]', s_latch: '[门关上了]', s_steps: '[身后有脚步声]', s_stepsStop: '[你一停,它也停]',
+    s_count: '[数钱]', p_pickup: '[E] 捡钱', o_back: '把钱拿回店里',
+    o_counter: '去柜台交钱', p_hand: '[E] 交钱', n2: '第二晚 · 即将推出', later: '结账', s_till: '[他看也不看,把钱放进钱柜]', present: '今日', past: '1989年',
     title: '收铺', titleSub: 'CLOSING TIME',
     intro1: '1989年,新界一家茶餐厅。', intro2: '打烊前的最后一单外卖。',
     enter: '进入', loading: '载入中', again: '再玩一次',
@@ -80,6 +92,12 @@ export const T = {
     walk: '走', act: '互动', desktop: '建议用电脑并戴耳机游玩。',
   },
   'zh-TW': {
+    vo2: '「第二晚,同一個鐘數,電話又響。」',
+    s_ring: '[電話響]', s_mahjong: '[綠色門後面有人打麻雀]', s_tube: '[光管嗡嗡聲]',
+    s_gate: '[鐵閘響咗一下。冇人]', s_stop: '[麻雀聲停咗]', s_crack: '[道門開咗條罅。入面一片黑]',
+    s_notes: '[有紙喺地下滑出嚟]', s_latch: '[道門閂返]', s_steps: '[身後有腳步聲]', s_stepsStop: '[你停,佢都停]',
+    s_count: '[數錢]', p_pickup: '[E] 執錢', o_back: '拎啲錢返舖頭',
+    o_counter: '去櫃枱交錢', p_hand: '[E] 交錢', n2: '第二晚 · 快將推出', later: '埋數', s_till: '[佢睇都冇睇,將啲錢放入錢櫃]', present: '今日', past: '一九八九年',
     title: '收舖', titleSub: 'CLOSING TIME',
     intro1: '八九年,新界一間茶餐廳。', intro2: '收舖前最後一單外賣。',
     enter: '入去', loading: '載入中', again: '再玩一次',

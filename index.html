@@ -44,6 +44,12 @@
   #progress { width:220px; height:1px; background:rgba(232,226,212,.15); margin-top:26px; }
   #progress i { display:block; height:100%; width:0; background:var(--ink); transition:width .2s; }
   #end { display:none; }
+  #props { position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+  #props .prop { position:absolute; left:0; top:0; transform-origin:0 0; display:none; filter:brightness(.62) saturate(.85); }
+  #pool { position:fixed; left:0; top:0; width:600px; height:600px; pointer-events:none; opacity:0; border-radius:50%;
+    background:radial-gradient(circle, rgba(150,255,210,.22) 0%, rgba(90,200,160,.10) 35%, rgba(0,0,0,0) 70%); mix-blend-mode:screen; transition:opacity .4s; }
+  #chapter { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); font-family:var(--serif); font-size:clamp(16px,2vw,22px); letter-spacing:.5em; color:var(--dim); opacity:0; transition:opacity .8s; pointer-events:none; z-index:3; }
+  #caption.sfx { font-family:var(--sans); font-style:italic; font-size:clamp(14px,1.8vw,20px); color:#b9b3a4; }
   #touch { display:none; }
   #touch button { position:fixed; bottom:max(26px,env(safe-area-inset-bottom)); width:86px; height:86px; border-radius:50%; border:1px solid rgba(232,226,212,.45); background:rgba(0,0,0,.35); color:var(--ink); font:inherit; font-size:15px; letter-spacing:.1em; touch-action:none; }
   #walkBtn { left:22px; }
@@ -59,7 +65,10 @@
 <canvas id="c"></canvas>
 <canvas id="grain" class="layer"></canvas>
 <div id="vignette" class="layer"></div>
+<div id="pool"></div>
+<div id="props"></div>
 <div id="black" class="layer"></div>
+<div id="chapter"></div>
 <div id="fade" class="layer"></div>
 <div id="crosshair"></div>
 <div id="objective"></div>
@@ -89,7 +98,7 @@
   <div class="seal">地府通用</div>
   <h1 data-t="epTitle">01 冥鏹</h1>
   <div class="en" data-t="epSub">THE MONEY NOBODY TOOK</div>
-  <p data-t="tagline"></p>
+  <p data-t="n2" style="letter-spacing:.2em"></p>
   <button id="again" class="main" data-t="again">再玩一次</button>
   <div class="credit">港詭古 @gonggwaigu · <span data-t="credit"></span> <a href="https://viggle.ai/pinoc/app" target="_blank" rel="noopener">PINOC by Viggle</a></div>
 </div>
