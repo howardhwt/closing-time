@@ -157,7 +157,7 @@ scene.app.on('update', () => {
 
 // ---- story ----
 let state = 'intro', frozen = false, t = 0;
-let ghostPos = { ...GHOST_START }, ghostOn = false, sinceStep = 0, unseen = 0;
+let ghostPos = { ...GHOST_START }, ghostOn = false, sinceStep = 0, unseen = 0, spotted = false;
 
 function near(p, r = 1.15, deg = 55) { return dist(p) < r && facing(p, deg); }
 
@@ -172,6 +172,7 @@ function tickStory(dt) {
     promptText('');
     const gd = Math.hypot(ghostPos.x - player.x, ghostPos.z - player.z);
     const seen = facing(ghostPos, 40);
+    if (!spotted) { if (seen && gd < 9) { spotted = true; sinceStep = 0; unseen = 0; } ghost.setRotation(0, Math.atan2(player.x - ghostPos.x, player.z - ghostPos.z) * 180 / Math.PI, 0); return; }
     unseen = seen ? 0 : unseen + dt; sinceStep += dt;
     // He moves only in the dark: when you look away, or every few seconds the tube gives out
     if ((unseen > 0.9 && sinceStep > 1.2) || sinceStep > 3.2) { sinceStep = 0; flickerStep(); }
@@ -238,7 +239,7 @@ async function finale() {
 
 function reset() {
   Object.assign(player, { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, pitch: -4, bob: 0 });
-  ghostPos = { ...GHOST_START }; ghost.setReveal(0); ghostOn = false;
+  ghostPos = { ...GHOST_START }; ghost.setReveal(0); ghostOn = false; spotted = false; unseen = 0; sinceStep = 0;
   ghost.setPosition(ghostPos.x, GHOST_Y, ghostPos.z);
   state = 'intro'; frozen = false; t = 0; black(0); env.setTint(0.6, DARK);
   for (const a of Object.values(sounds)) { a.pause(); a.currentTime = 0; }
