@@ -23,7 +23,7 @@ const EYE = 1.55;
 const DARK = { r: 0.012, g: 0.026, b: 0.03 };
 const L = {
   shop: {
-    file: 'shop.spz', scale: 2.34, tint: 0.32,
+    file: 'shop.spz', scale: 2.34, tint: 0.1,
     bounds: { x0: -0.9, x1: 0.85, z0: -2.8, z1: 5.6 },   // the aisle; street door at -z
     spawn: { x: 0.0, z: 3.8, yaw: 0 },
     till: { x: 1.6, z: -2.4, y: 1.15 },                    // the cold green pool sits here
@@ -32,18 +32,19 @@ const L = {
     exit: { x: 0.0, z: -3.05 },
     back: { x: 0.0, z: -2.7, yaw: 180 },
     handStand: { x: 0.3, z: -2.0, yaw: -77 },   // clear of the side wall, 祥哥 in full view
-    booth: { from: { x: 0.35, y: 1.35, z: 4.9 }, to: { x: 0.05, y: 1.25, z: 3.3 }, look: { x: -1.35, y: 0.95, z: 2.3 } },
+    booth: { from: { x: 0.2, y: 1.3, z: 4.4 }, to: { x: -0.25, y: 1.15, z: 3.0 }, look: { x: -1.35, y: 0.75, z: 2.2 } },   // 輝叔's seat, empty
   },
   corridor: {
-    file: 'corridor2.spz', scale: 1.74, tint: 0.05,
-    bounds: { x0: -0.5, x1: 0.5, z0: -3.05, z1: 4.35 },
-    spawn: { x: 0, z: 4.0, yaw: 0 },                       // stair end, facing the green door at -z
+    file: 'corridor2.spz', scale: 1.74, tint: 0.0,
+    bounds: { x0: -0.5, x1: 0.5, z0: -3.05, z1: 5.6 },
+    spawn: { x: 0, z: 4.45, yaw: 0 },                      // at the top of the stairs, facing down the corridor to the green door
+    camMaxZ: 4.5,                                          // the stairwell behind is unlit: keep the shoulder camera out of it
     door: { x: -0.13, z: -3.71, latchX: 0.33, h: 2.05 },          // measured by projecting the floor in Chrome
     knockStand: { x: -0.42, z: -2.98 },   // his knocking hand lands on the door, not the wall
     watchStand: { x: -0.15, z: -2.35 },   // one step back: the crack and the floor in view
     floorMoney: { x: -0.1, z: -2.95 },
     tubeAt: 2.0, gateAt: -0.9,                             // z where the dread beats fire
-    exit: 4.25,
+    exit: 5.05,                                            // into the dark stairwell, and down
   },
 };
 if (Q.get('layout')) { try { const o = JSON.parse(Q.get('layout')); for (const k in o) Object.assign(L[k], o[k]); } catch { /* ignore */ } }
@@ -108,6 +109,20 @@ const S = {
   mahjong: snd('mahjong.mp3', { loop: true, vol: 0 }), steps: snd('steps.mp3', { loop: true, vol: 0 }),
   who: snd('who.mp3'), drone: snd('drone.mp3', { loop: true, vol: 0 }),
 };
+let actx = null, mjGain = null, mjLow = null;
+function initAudio() {
+  if (actx) return; try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = actx.createMediaElementSource(S.mahjong); mjLow = actx.createBiquadFilter(); mjLow.type = 'lowpass'; mjLow.frequency.value = 400;
+    mjGain = actx.createGain(); mjGain.gain.value = 0; src.connect(mjLow).connect(mjGain).connect(actx.destination); S.mahjong.volume = 1;
+  } catch { actx = null; }
+}
+function mahjongNear(d) {   // d = metres to the green door: a thin door getting thinner
+  const k = Math.max(0, Math.min(1, 1 - (d - 0.6) / 7.5));
+  if (mjGain) { mjGain.gain.value = 0.06 + 1.3 * Math.pow(k, 1.7); mjLow.frequency.value = 380 + 3600 * k * k; }
+  else S.mahjong.volume = Math.min(1, 0.06 + 0.94 * Math.pow(k, 1.7));
+}
+function mahjongStop() { if (mjGain) mjGain.gain.value = 0; S.mahjong.pause(); }
 function fade(a, to, ms) { const from = a.volume, t0 = performance.now(); const step = () => { const k = Math.min(1, (performance.now() - t0) / ms); a.volume = from + (to - from) * k; if (k < 1) requestAnimationFrame(step); }; step(); }
 function play(a, from = 0) { try { a.currentTime = from; const p = a.play(); if (p) p.catch(() => {}); } catch { /* ignore */ } }
 function stop(a) { a.pause(); a.volume = 0; }
@@ -125,7 +140,7 @@ const canvas = $('c');
 const DPR = TOUCH ? 1 : Math.min(devicePixelRatio, 1.5);
 function resize() { canvas.width = innerWidth * DPR; canvas.height = innerHeight * DPR; }
 resize(); addEventListener('resize', resize);
-if (!LITE) canvas.style.filter = 'contrast(1.06) saturate(0.8) brightness(1.12)';
+if (!LITE) canvas.style.filter = 'contrast(1.04) saturate(0.85) brightness(1.3)';
 
 applyLang();
 const scene = await Scene.create(canvas, { fov: TOUCH ? 74 : 68, near: 0.05, far: 60, bgColor: { r: 0, g: 0, b: 0, a: 1 },
@@ -153,9 +168,9 @@ function anim(ch, name, loop = true, fadeS = 0.3) {
   try { ch.crossfadeTo(n, { duration: fadeS, loop: n === 'idle' ? true : loop }); } catch { ch.playAnimation(n, { loop }); }
 }
 const boss = await Character.load(scene, A('xiangge.vsplat'));
-boss.setLayers([scene.envLayerId]); boss.playAnimation('count', { loop: true }); boss.setTint(0.22, DARK);
+boss.setLayers([scene.envLayerId]); boss.playAnimation('count', { loop: true }); boss.setTint(0.08, DARK);
 const fai = await Character.load(scene, A('ahfai.vsplat'));
-fai.setLayers([scene.envLayerId]); fai.playAnimation('idle', { loop: true }); fai.setTint(0.2, DARK);
+fai.setLayers([scene.envLayerId]); fai.playAnimation('idle', { loop: true }); fai.setTint(0.08, DARK);
 if (NOBODY) fai.setActive(false);
 const HEAD = Math.max(0, fai.armature.boneNames.findIndex((n) => /^head$/i.test(n)));
 bar.style.width = '85%';
@@ -200,10 +215,11 @@ function updateProps() {
   // carried things sit where a first-person eye can see them: low in the frame, swinging with the walk
   const held = (side, down, ahead) => { const c = cam.getPosition(), f = cam.forward, rt = cam.right, u = cam.up, sw = Math.sin(performance.now() / 260) * (player.moving ? 0.018 : 0.004);
     return { x: c.x + f.x * ahead + rt.x * side + u.x * (-down + sw), y: c.y + f.y * ahead + rt.y * side + u.y * (-down + sw), z: c.z + f.z * ahead + rt.z * side + u.z * (-down + sw) }; };
-  if (carry.bag && !rail.on) placeQuad(bag, standQuad(held(-0.2, 0.3, 0.42), 0.17, 0.34));
+  const handAt = (i, dy) => { const h = bonePos(i); return h ? { x: h.x, y: h.y + dy, z: h.z } : null; };
+  if (carry.bag && !rail.on) { const p = view === 'third' ? handAt(HAND_L, -0.22) : held(-0.2, 0.3, 0.42); if (p) placeQuad(bag, standQuad(p, view === 'third' ? 0.24 : 0.17, view === 'third' ? 0.48 : 0.34)); else hide(bag); }
   else if (bagAt && corridor) placeQuad(bag, standQuad(bagAt, bag.__w, bag.__h)); else hide(bag);
   floorNotes.forEach((n, i) => { if (n.__on && corridor) placeQuad(n, flatQuad({ x: floorPose[i].x, y: 0.012, z: floorPose[i].z }, 0.16, 0.062, floorPose[i].r)); else hide(n); });
-  if (carry.notes && !rail.on) placeQuad(handNotes, standQuad(held(0.16, 0.2, 0.4), 0.13, 0.05));
+  if (carry.notes && !rail.on) { const p = view === 'third' ? handAt(HAND_R, 0.0) : held(0.16, 0.2, 0.4); if (p) placeQuad(handNotes, standQuad(p, 0.13, 0.05)); else hide(handNotes); }
   else hide(handNotes);
 }
 function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.08, y: 0.24, z: d.z + 0.3 }; }
@@ -250,10 +266,12 @@ function updatePool() {
 // ---------------------------------------------------------------------------
 const cam = scene.cameraEntity;
 const player = { x: 0, z: 3, yaw: 0, pitch: -4, bob: 0, scene: 'shop', moving: false, act: null, reach: 0.2, auto: false };
-const rail = { on: false, p: null, l: null };  // frame shots drive the camera directly
+const rail = { on: false, p: null, l: null };
+let view = 'first';   // V or the touch button switches to a camera over his shoulder
+function toggleView() { view = view === 'first' ? 'third' : 'first'; }  // frame shots drive the camera directly
 const keys = new Set();
 let locked = false, dragging = false, playing = false, frozen = false, walkHeld = false;
-addEventListener('keydown', (e) => { keys.add(e.code); if (e.code === 'KeyE' || e.code === 'Space') interact(); });
+addEventListener('keydown', (e) => { keys.add(e.code); if (e.code === 'KeyE' || e.code === 'Space') interact(); if (e.code === 'KeyV' && !e.repeat) toggleView(); });
 addEventListener('keyup', (e) => keys.delete(e.code));
 document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
 function look(dx, dy, k) { if (frozen && !DEV) return; player.yaw -= dx * k; player.pitch = Math.max(-60, Math.min(50, player.pitch - dy * k)); }
@@ -272,6 +290,7 @@ if (!TOUCH) {
   wb.addEventListener('touchend', (e) => { e.preventDefault(); walkHeld = false; });
   wb.addEventListener('touchcancel', () => (walkHeld = false));
   $('actBtn').addEventListener('touchstart', (e) => { e.preventDefault(); interact(); });
+  $('viewBtn').addEventListener('touchstart', (e) => { e.preventDefault(); toggleView(); });
 }
 
 function collide(nx, nz) { const b = L[player.scene].bounds; return [Math.max(b.x0, Math.min(b.x1, nx)), Math.max(b.z0, Math.min(b.z1, nz))]; }
@@ -322,12 +341,20 @@ scene.app.on('update', () => {
   // the body: stands where you stand, faces where you face
   const f = fwd();
   if (!NOBODY && !rail.on) {
-    fai.setPosition(player.x - f.x * 0.16, 0.08, player.z - f.z * 0.16);
+    const off = view === 'third' ? 0 : 0.16; fai.setPosition(player.x - f.x * off, 0.08, player.z - f.z * off);
     fai.setRotation(0, player.yaw + 180, 0);
     if (!player.act) { anim(fai, moving ? 'walk' : 'idle', true, 0.25); fai.playbackSpeed = moving ? 0.8 : 1; }
   }
   if (rail.on) { cam.setPosition(rail.p.x, rail.p.y, rail.p.z); cam.lookAt(rail.l.x, rail.l.y, rail.l.z); }
-  else {
+  else if (view === 'third' && !NOBODY) {
+    // over the shoulder, kept inside the walls
+    const b = L[player.scene].bounds, pr = player.pitch * Math.PI / 180, back = 1.45;
+    const cx = Math.max(b.x0 - 0.1, Math.min(b.x1 + 0.1, player.x - f.x * back + -f.z * 0.28));
+    const cz = Math.max(b.z0 - 0.4, Math.min(L[player.scene].camMaxZ ?? (b.z1 + 0.4), player.z - f.z * back + f.x * 0.28));
+    const cy = 1.95 - Math.sin(pr) * 0.6;
+    cam.setPosition(cx, cy, cz);
+    cam.lookAt(player.x + f.x * 1.2, 1.45 + Math.sin(pr) * 1.2, player.z + f.z * 1.2);
+  } else {
     const h = headPos();
     if (!h) player.bob += moving ? dt * 7.5 : 0;
     const rch = player.reach + (moving ? 0.06 : 0);  // a little further out while walking, clear of his own head
@@ -356,7 +383,7 @@ function tick(dt) {
   } else if (state === 'leave') prompt(near(sh.exit, 1.6, 70) ? 'p_leave' : null);
   else if (state === 'door') {
     // mahjong grows as you near the green door
-    S.mahjong.volume = Math.max(0.05, Math.min(0.75, 1.6 / (dist(co.door) + 0.4)));
+    mahjongNear(dist(co.door));
     if (!beats.tube && player.z < co.tubeAt) { beats.tube = true; tubeFlicker(true); }
     if (!beats.gate && player.z < co.gateAt) { beats.gate = true; play(S.gate); caption('s_gate', 2400); }
     flick -= dt; if (beats.tube && flick < 0) { flick = 5 + Math.random() * 6; tubeFlicker(false); }
@@ -399,7 +426,7 @@ async function interact() {
     await turnTo(0, -4, 350); await walkTo(co.knockStand.x, co.knockStand.z);
     dropBag(); await wait(300);
     act('knock', 2600); await wait(500); play(S.knock);
-    await wait(250); stop(S.mahjong); await wait(900); caption('s_stop', 2400);   // the room goes quiet
+    await wait(250); mahjongStop(); await wait(900); caption('s_stop', 2400);   // the room goes quiet
     await wait(1400); play(S.takeaway); caption('takeaway', 1800);
     await wait(2800);
     caption('silence', 1800); fade(S.drone, 0.12, 900); await wait(2600);
@@ -451,7 +478,7 @@ async function toCorridor() {
   if (!envs.corridor) { $('toast').textContent = t('loadingCorridor'); $('toast').style.opacity = 1; await corridorReady; $('toast').style.opacity = 0; }
   envs.shop.entity.enabled = false; envs.corridor.entity.enabled = true; boss.setActive(false);
   setPlayer(co.spawn, 'corridor');
-  S.mahjong.volume = 0.05; play(S.mahjong);
+  mahjongNear(dist(co.door)); play(S.mahjong);
   await wait(500); fadeOut(0); frozen = false; fade(S.drone, 0.22, 3000);
   setTimeout(() => caption('s_mahjong', 2600), 1600);
   state = 'door'; objective('o_door');
@@ -474,7 +501,7 @@ async function railShot(from, to, lookAt, ms) {
     rail.p = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, z: from.z + (to.z - from.z) * e };
     if (k >= 1) break; await wait(16); }
 }
-function frameScene() { envs.shop.entity.enabled = true; if (envs.corridor) envs.corridor.entity.enabled = false; boss.setActive(false); player.scene = 'shop'; envs.shop.setTint(0.3, DARK); }
+function frameScene() { envs.shop.entity.enabled = true; if (envs.corridor) envs.corridor.entity.enabled = false; boss.setActive(false); player.scene = 'shop'; envs.shop.setTint(0.05, DARK); }
 async function frameStart() {
   frameScene(); rail.on = true; rail.p = sh.booth.from; rail.l = sh.booth.look;
   black(1); card('present', true); await wait(1400); card(null, false); black(0);
@@ -510,6 +537,7 @@ function reset() {
   for (const a of Object.values(S)) { a.pause(); a.currentTime = 0; }
 }
 async function begin() {
+  initAudio(); if (actx && actx.state === 'suspended') actx.resume();
   $('start').style.display = 'none'; $('end').style.display = 'none'; $('langs').style.display = 'none';
   reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1;
   if (!TOUCH) canvas.requestPointerLock?.();
@@ -528,7 +556,7 @@ go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
 window.__ready = true;
-window.__debug = { cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
+window.__debug = { toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
   go(x, z, yaw = player.yaw, pitch = player.pitch) { Object.assign(player, { x, z, yaw, pitch }); },
   async show(k) { await corridorReady; envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); } };
