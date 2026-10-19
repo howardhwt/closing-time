@@ -160,7 +160,7 @@ envs.shop = await loadEnv('shop', (k) => (bar.style.width = (k * 70).toFixed(1) 
 
 await Animation.loadGlb(scene, A('idle.glb'), 'idle');
 const ANIMS = new Set(['idle']);
-await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'knock', 'pickup', 'handover'].map((n) =>
+await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
   Animation.loadGlb(scene, A(`m-${n}.glb`), n).then(() => ANIMS.add(n)).catch(() => {})));
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
@@ -178,51 +178,52 @@ bar.style.width = '85%';
 const corridorReady = loadEnv('corridor', (k) => (bar.style.width = (85 + k * 15).toFixed(1) + '%'))
   .then((e) => { envs.corridor = e; e.entity.enabled = false; bar.style.width = '100%'; });
 
-// Props are drawn as images projected into the scene (homography onto the screen), so they
-// carry their reference textures exactly. They sit over the splats; nothing in the shots needs to hide them.
-const propLayer = $('props');
-function propImg(file) { const im = document.createElement('img'); im.src = A(file); im.className = 'prop'; propLayer.appendChild(im); im.__on = false; return im; }
-const bag = propImg('prop-bag.png'); bag.__w = 0.24; bag.__h = 0.48;
-const floorNotes = [0, 1, 2].map(() => propImg('prop-note.jpg'));
-const handNotes = propImg('prop-note.jpg');
-const notes = { set enabled(v) { for (const n of floorNotes) n.__on = v; } };
+// Props are real 3D: a modelled takeaway bag (GLB, built in Blender from the reference still) and
+// thin notes printed with the 陰司紙. They draw on the overlay layer, unlit, dimmed to sit in the scene.
+const OVERLAY = scene.app.scene.layers.getLayerByName('OverlaySplats')?.id ?? 0;
+const PROP_GLOW = 0.62;
+function unlit(mat) {
+  mat.useLighting = false; const d = mat.diffuse; mat.emissive.set(d.r * PROP_GLOW, d.g * PROP_GLOW, d.b * PROP_GLOW);
+  if (mat.diffuseMap) { mat.emissiveMap = mat.diffuseMap; mat.emissive.set(PROP_GLOW, PROP_GLOW, PROP_GLOW); }
+  mat.diffuse.set(0, 0, 0); mat.update();
+}
+const bag = new Entity('bag'); bag.enabled = false; scene.app.root.addChild(bag);
+scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
+  if (err) return; const m = asset.resource.instantiateRenderEntity();
+  m.findComponents('render').forEach((r) => { r.layers = [OVERLAY]; r.meshInstances.forEach((mi) => { mi.material = mi.material.clone(); unlit(mi.material); }); });
+  bag.addChild(m);
+});
+const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
+scene.app.assets.loadFromUrl(A('prop-note.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
+function noteEntity() { const e = new Entity('note'); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
+const floorNotes = [0, 1, 2].map(noteEntity);
+const handNotes = new Entity('handNotes'); scene.app.root.addChild(handNotes); handNotes.enabled = false;
+[0, 1, 2].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 7, 0); });
+const notes = { set enabled(v) { for (const n of floorNotes) n.enabled = v; } };
 const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n));
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const carry = { bag: false, notes: false };
 const floorPose = [{ x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }];
 let bagAt = null;
-const pv = new Vec3(), ps = new Vec3();
-function toScreen(p) { pv.set(p.x, p.y, p.z); cam.camera.worldToScreen(pv, ps); const c = cam.getPosition(), f = cam.forward; return { x: ps.x, y: ps.y, front: (p.x - c.x) * f.x + (p.y - c.y) * f.y + (p.z - c.z) * f.z > 0.05 }; }
-function homography(w, h, q) {   // maps (0,0) (w,0) (w,h) (0,h) to the four screen points q
-  const [x0, y0, x1, y1, x2, y2, x3, y3] = [q[0].x, q[0].y, q[1].x, q[1].y, q[2].x, q[2].y, q[3].x, q[3].y];
-  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
-  const den = dx1 * dy2 - dx2 * dy1; const g = (sx * dy2 - dx2 * sy) / den, hh = (dx1 * sy - sx * dy1) / den;
-  const a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d = y1 - y0 + g * y1, e = y3 - y0 + hh * y3;
-  return `matrix3d(${a / w},${d / w},0,${g / w},${b / h},${e / h},0,${hh / h},0,0,1,0,${x0},${y0},0,1)`;
-}
-function placeQuad(el, corners) {
-  if (!el.complete || !el.naturalWidth) { el.style.display = 'none'; return; }
-  const q = corners.map(toScreen); if (q.some((p) => !p.front)) { el.style.display = 'none'; return; }
-  el.style.display = 'block'; el.style.transform = homography(el.naturalWidth, el.naturalHeight, q);
-}
-function flatQuad(c, w, h, yawDeg) { const r = yawDeg * Math.PI / 180, ax = { x: Math.cos(r) * w / 2, z: -Math.sin(r) * w / 2 }, az = { x: Math.sin(r) * h / 2, z: Math.cos(r) * h / 2 };
-  return [{ x: c.x - ax.x - az.x, y: c.y, z: c.z - ax.z - az.z }, { x: c.x + ax.x - az.x, y: c.y, z: c.z + ax.z - az.z }, { x: c.x + ax.x + az.x, y: c.y, z: c.z + ax.z + az.z }, { x: c.x - ax.x + az.x, y: c.y, z: c.z - ax.z + az.z }]; }
-function standQuad(c, w, h) { const rt = cam.right; return [{ x: c.x - rt.x * w / 2, y: c.y + h / 2, z: c.z - rt.z * w / 2 }, { x: c.x + rt.x * w / 2, y: c.y + h / 2, z: c.z + rt.z * w / 2 }, { x: c.x + rt.x * w / 2, y: c.y - h / 2, z: c.z + rt.z * w / 2 }, { x: c.x - rt.x * w / 2, y: c.y - h / 2, z: c.z - rt.z * w / 2 }]; }
-function hide(el) { el.style.display = 'none'; }
 function updateProps() {
   const corridor = player.scene === 'corridor' && envs.corridor && envs.corridor.entity.enabled;
-  // carried things sit where a first-person eye can see them: low in the frame, swinging with the walk
-  const held = (side, down, ahead) => { const c = cam.getPosition(), f = cam.forward, rt = cam.right, u = cam.up, sw = Math.sin(performance.now() / 260) * (player.moving ? 0.018 : 0.004);
+  // in first person, what he carries sits low in the frame where an eye can see it, swinging with the walk
+  const heldAt = (side, down, ahead) => { const c = cam.getPosition(), f = cam.forward, rt = cam.right, u = cam.up, sw = Math.sin(player.bob) * (player.moving ? 0.02 : 0.003);
     return { x: c.x + f.x * ahead + rt.x * side + u.x * (-down + sw), y: c.y + f.y * ahead + rt.y * side + u.y * (-down + sw), z: c.z + f.z * ahead + rt.z * side + u.z * (-down + sw) }; };
-  const handAt = (i, dy) => { const h = bonePos(i); return h ? { x: h.x, y: h.y + dy, z: h.z } : null; };
-  if (carry.bag && !rail.on) { const p = view === 'third' ? handAt(HAND_L, -0.22) : held(-0.2, 0.3, 0.42); if (p) placeQuad(bag, standQuad(p, view === 'third' ? 0.24 : 0.17, view === 'third' ? 0.48 : 0.34)); else hide(bag); }
-  else if (bagAt && corridor) placeQuad(bag, standQuad(bagAt, bag.__w, bag.__h)); else hide(bag);
-  floorNotes.forEach((n, i) => { if (n.__on && corridor) placeQuad(n, flatQuad({ x: floorPose[i].x, y: 0.012, z: floorPose[i].z }, 0.16, 0.062, floorPose[i].r)); else hide(n); });
-  if (carry.notes && !rail.on) { const p = view === 'third' ? handAt(HAND_R, 0.0) : held(0.16, 0.2, 0.4); if (p) placeQuad(handNotes, standQuad(p, 0.13, 0.05)); else hide(handNotes); }
-  else hide(handNotes);
+  const handAt = (i) => bonePos(i);
+  if (carry.bag && !rail.on) {
+    const p = view === 'third' ? handAt(HAND_L) : heldAt(-0.22, 0.34, 0.5);
+    if (p) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
+  } else if (bagAt && corridor) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
+  else bag.enabled = false;
+  floorNotes.forEach((n, i) => { if (n.enabled) { n.setPosition(floorPose[i].x, 0.004 + i * 0.002, floorPose[i].z); n.setEulerAngles(0, floorPose[i].r, 0); } });
+  if (carry.notes && !rail.on) {
+    const p = view === 'third' ? handAt(HAND_R) : heldAt(0.17, 0.26, 0.45);
+    if (p) { handNotes.enabled = true; handNotes.setPosition(p.x, p.y, p.z); handNotes.setEulerAngles(view === 'third' ? 0 : 55, camS.bodyYaw + 180, 0); } else handNotes.enabled = false;
+  } else handNotes.enabled = false;
 }
-function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.08, y: 0.24, z: d.z + 0.3 }; }
+function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.1, y: 0.41, z: d.z + 0.3 }; }   // origin is the handles: 0.41 m tall
 const crack = new Entity('crack');
 crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled = false; scene.app.root.addChild(crack);
 { const ov = scene.app.scene.layers.getLayerByName('OverlaySplats'); if (ov) crack.render.layers = [ov.id]; }
@@ -268,22 +269,38 @@ const cam = scene.cameraEntity;
 const player = { x: 0, z: 3, yaw: 0, pitch: -4, bob: 0, scene: 'shop', moving: false, act: null, reach: 0.2, auto: false };
 const rail = { on: false, p: null, l: null };
 let view = 'first';   // V or the touch button switches to a camera over his shoulder
-function toggleView() { view = view === 'first' ? 'third' : 'first'; }  // frame shots drive the camera directly
+function toggleView() { view = view === 'first' ? 'third' : 'first'; camS.init = false; }  // frame shots drive the camera directly
+// ---- input: named actions, bound per device (keyboard/mouse, gamepad, touch) ----
+const BIND = {
+  forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA'], right: ['KeyD'],
+  turnL: ['ArrowLeft', 'KeyQ'], turnR: ['ArrowRight'], interact: ['KeyE', 'Space', 'Enter'], view: ['KeyV'],
+};
 const keys = new Set();
 let locked = false, dragging = false, playing = false, frozen = false, walkHeld = false;
-addEventListener('keydown', (e) => { keys.add(e.code); if (e.code === 'KeyE' || e.code === 'Space') interact(); if (e.code === 'KeyV' && !e.repeat) toggleView(); });
+const held = (a) => BIND[a].some((k) => keys.has(k));
+addEventListener('keydown', (e) => {
+  if (BIND.forward.concat(BIND.back, BIND.turnL, BIND.turnR, BIND.interact).includes(e.code) && playing) e.preventDefault();
+  if (e.repeat) return; keys.add(e.code);
+  if (BIND.interact.includes(e.code)) interact();         // edge: once per press
+  if (BIND.view.includes(e.code)) toggleView();
+});
 addEventListener('keyup', (e) => keys.delete(e.code));
-document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
-function look(dx, dy, k) { if (frozen && !DEV) return; player.yaw -= dx * k; player.pitch = Math.max(-60, Math.min(50, player.pitch - dy * k)); }
+addEventListener('blur', () => keys.clear());             // no stuck keys after alt-tab
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; $('lookhint').style.opacity = playing && !locked && !TOUCH ? 1 : 0; });
+const LOOK = { mouse: 0.11, touch: 0.25, pad: 150 };      // deg per px / deg per second at full stick
+function look(dx, dy, k) {
+  if (frozen && !DEV) return;
+  player.yaw -= dx * k; player.pitch = Math.max(view === 'third' ? -35 : -70, Math.min(view === 'third' ? 30 : 60, player.pitch - dy * k));
+}
 if (!TOUCH) {
   canvas.addEventListener('mousedown', () => { if (!playing && !DEV) return; if (!locked) { canvas.requestPointerLock?.(); dragging = true; } else interact(); });
   addEventListener('mouseup', () => (dragging = false));
-  addEventListener('mousemove', (e) => { if (!(playing || DEV) || !(locked || dragging)) return; look(e.movementX, e.movementY, 0.12); });
+  addEventListener('mousemove', (e) => { if (!(playing || DEV) || !(locked || dragging)) return; look(e.movementX, e.movementY, LOOK.mouse); });
 } else {
   $('touch').style.display = 'block';
   let lt = null;
   canvas.addEventListener('touchstart', (e) => { const tt = e.changedTouches[0]; lt = { id: tt.identifier, x: tt.clientX, y: tt.clientY }; }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => { for (const tt of e.changedTouches) if (lt && tt.identifier === lt.id) { look(tt.clientX - lt.x, tt.clientY - lt.y, 0.28); lt.x = tt.clientX; lt.y = tt.clientY; } }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => { for (const tt of e.changedTouches) if (lt && tt.identifier === lt.id) { look(tt.clientX - lt.x, tt.clientY - lt.y, LOOK.touch); lt.x = tt.clientX; lt.y = tt.clientY; } }, { passive: true });
   canvas.addEventListener('touchend', () => (lt = null), { passive: true });
   const wb = $('walkBtn');
   wb.addEventListener('touchstart', (e) => { e.preventDefault(); walkHeld = true; });
@@ -291,6 +308,17 @@ if (!TOUCH) {
   wb.addEventListener('touchcancel', () => (walkHeld = false));
   $('actBtn').addEventListener('touchstart', (e) => { e.preventDefault(); interact(); });
   $('viewBtn').addEventListener('touchstart', (e) => { e.preventDefault(); toggleView(); });
+}
+// gamepad: radial deadzone on each stick; A interact, Y view (edge-detected)
+const padPrev = { a: false, y: false };
+function deadzone(x, y, dz = 0.2) { const m = Math.hypot(x, y); if (m < dz) return [0, 0]; const k = (m - dz) / (1 - dz) / m; return [x * k, y * k]; }
+function readPad(dt) {
+  const gp = navigator.getGamepads?.().find((g) => g && g.connected); if (!gp) return { mx: 0, my: 0 };
+  const [mx, my] = deadzone(gp.axes[0] || 0, gp.axes[1] || 0); const [lx, ly] = deadzone(gp.axes[2] || 0, gp.axes[3] || 0);
+  if (lx || ly) look(lx * LOOK.pad * dt / LOOK.mouse * LOOK.mouse, ly * LOOK.pad * dt * 0.7, 1);
+  const a = !!gp.buttons[0]?.pressed, y = !!gp.buttons[3]?.pressed;
+  if (a && !padPrev.a) interact(); if (y && !padPrev.y) toggleView(); padPrev.a = a; padPrev.y = y;
+  return { mx, my };
 }
 
 function collide(nx, nz) { const b = L[player.scene].bounds; return [Math.max(b.x0, Math.min(b.x1, nx)), Math.max(b.z0, Math.min(b.z1, nz))]; }
@@ -303,7 +331,7 @@ async function turnTo(yaw, pitch, ms = 700) {   // ease the view, used when an a
   const y0 = player.yaw, p0 = player.pitch; let dy = ((yaw - y0 + 540) % 360) - 180; const t0 = performance.now();
   for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k); player.yaw = y0 + dy * e; player.pitch = p0 + (pitch - p0) * e; if (k >= 1) break; await wait(16); }
 }
-async function walkTo(x, z, speed = 0.75) {   // 阿輝 walks there himself; no cuts, no teleports
+async function walkTo(x, z, speed = 1.0) {   // 阿輝 walks there himself; no cuts, no teleports
   player.auto = true;
   for (;;) { const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz); if (d < 0.03) break;
     const st = Math.min(d, speed * 0.016); player.x += dx / d * st; player.z += dz / d * st; await wait(16); }
@@ -319,50 +347,86 @@ function headPos() {
   const m = fai.armature.getBoneWorldMatrix(HEAD); if (!m) return null;
   m.getTranslation(headM.pos); return headM.pos;
 }
+const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));   // frame-rate independent
+const angDamp = (cur, target, rate, dt) => { const d = ((target - cur + 540) % 360) - 180; return cur + d * (1 - Math.exp(-rate * dt)); };
+const SPEED = { fwd: 1.35, back: 0.75, side: 0.9 };    // m/s, a cautious delivery boy
+const move = { vx: 0, vz: 0, lx: 0, lz: 0 };           // world velocity; local (forward/right) speed for the animation
+const camS = { x: 0, y: EYE, z: 0, eye: EYE, init: false, bodyYaw: 0 };
+let lastPos = { x: 0, z: 0 };
 
 let last = performance.now();
 scene.app.on('update', () => {
   const now = performance.now(); const dtReal = Math.min(0.3, (now - last) / 1000); const dt = Math.min(0.05, dtReal); last = now;
-  let moving = false;
+  const f = fwd(), rg = { x: -f.z, z: f.x };
+  // wanted local velocity from actions
+  let inF = 0, inR = 0;
   if ((playing && !frozen) || DEV) {
-    const f = fwd(), rg = { x: -f.z, z: f.x }; let mx = 0, mz = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp') || walkHeld) { mx += f.x; mz += f.z; }
-    if (keys.has('KeyS') || keys.has('ArrowDown')) { mx -= f.x; mz -= f.z; }
-    if (keys.has('KeyD')) { mx += rg.x; mz += rg.z; }
-    if (keys.has('KeyA')) { mx -= rg.x; mz -= rg.z; }
-    if (keys.has('ArrowLeft')) player.yaw += 90 * dt;
-    if (keys.has('ArrowRight')) player.yaw -= 90 * dt;
-    const m = Math.hypot(mx, mz);
-    if (m > 0) { moving = true; const sp = 1.15 * dt / m; if (DEV) { player.x += mx * sp * 2; player.z += mz * sp * 2; } else [player.x, player.z] = collide(player.x + mx * sp, player.z + mz * sp); }
+    if (held('forward') || walkHeld) inF += 1; if (held('back')) inF -= 1;
+    if (held('right')) inR += 1; if (held('left')) inR -= 1;
+    if (held('turnL')) player.yaw += 100 * dt; if (held('turnR')) player.yaw -= 100 * dt;
+    const pad = readPad(dt); inF -= pad.my; inR += pad.mx;
   }
-  moving = moving || player.auto; player.moving = moving;
+  const im = Math.hypot(inF, inR); if (im > 1) { inF /= im; inR /= im; }
+  const wantF = inF * (inF >= 0 ? SPEED.fwd : SPEED.back), wantR = inR * SPEED.side;
+  const tvx = f.x * wantF + rg.x * wantR, tvz = f.z * wantF + rg.z * wantR;
+  // accelerate / brake smoothly instead of snapping to full speed
+  move.vx = damp(move.vx, tvx, im > 0 ? 9 : 12, dt); move.vz = damp(move.vz, tvz, im > 0 ? 9 : 12, dt);
+  if (Math.hypot(move.vx, move.vz) > 0.01 && !player.auto) {
+    if (DEV) { player.x += move.vx * dt * 2; player.z += move.vz * dt * 2; } else [player.x, player.z] = collide(player.x + move.vx * dt, player.z + move.vz * dt);
+  }
+  // what actually happened this frame (covers scripted walks too) drives the legs
+  const dvx = (player.x - lastPos.x) / Math.max(dt, 1e-3), dvz = (player.z - lastPos.z) / Math.max(dt, 1e-3); lastPos = { x: player.x, z: player.z };
+  move.lx = damp(move.lx, dvx * f.x + dvz * f.z, 10, dt); move.lz = damp(move.lz, dvx * rg.x + dvz * rg.z, 10, dt);
+  const speed = Math.hypot(move.lx, move.lz);
+  const moving = speed > 0.12; player.moving = moving;
   if (playing && !DEV) tick(dtReal);
 
-  // the body: stands where you stand, faces where you face
-  const f = fwd();
+  // the body: legs match the ground speed; the torso turns toward a sidestep instead of sliding
   if (!NOBODY && !rail.on) {
+    let face = player.yaw;
+    if (moving && move.lx > -0.1) face = player.yaw - Math.atan2(move.lz, Math.max(0.2, move.lx)) * 180 / Math.PI * 0.8;
+    camS.bodyYaw = camS.init ? angDamp(camS.bodyYaw, face, 12, dt) : face;
     const off = view === 'third' ? 0 : 0.16; fai.setPosition(player.x - f.x * off, 0.08, player.z - f.z * off);
-    fai.setRotation(0, player.yaw + 180, 0);
-    if (!player.act) { anim(fai, moving ? 'walk' : 'idle', true, 0.25); fai.playbackSpeed = moving ? 0.8 : 1; }
+    fai.setRotation(0, camS.bodyYaw + 180, 0);
+    if (!player.act) {
+      if (!moving) { anim(fai, 'idle', true, 0.3); fai.playbackSpeed = 1; }
+      else if (move.lx < -0.1) { anim(fai, 'walkback', true, 0.25); fai.playbackSpeed = Math.max(0.5, Math.min(1.3, -move.lx / SPEED.back)); }
+      else { anim(fai, 'walk', true, 0.25); fai.playbackSpeed = Math.max(0.45, Math.min(1.3, speed / 1.45)); }
+    }
   }
-  if (rail.on) { cam.setPosition(rail.p.x, rail.p.y, rail.p.z); cam.lookAt(rail.l.x, rail.l.y, rail.l.z); }
-  else if (view === 'third' && !NOBODY) {
-    // over the shoulder, kept inside the walls
-    const b = L[player.scene].bounds, pr = player.pitch * Math.PI / 180, back = 1.45;
-    const cx = Math.max(b.x0 - 0.1, Math.min(b.x1 + 0.1, player.x - f.x * back + -f.z * 0.28));
-    const cz = Math.max(b.z0 - 0.4, Math.min(L[player.scene].camMaxZ ?? (b.z1 + 0.4), player.z - f.z * back + f.x * 0.28));
-    const cy = 1.95 - Math.sin(pr) * 0.6;
-    cam.setPosition(cx, cy, cz);
-    cam.lookAt(player.x + f.x * 1.2, 1.45 + Math.sin(pr) * 1.2, player.z + f.z * 1.2);
-  } else {
-    const h = headPos();
-    if (!h) player.bob += moving ? dt * 7.5 : 0;
-    const rch = player.reach + (moving ? 0.06 : 0);  // a little further out while walking, clear of his own head
-    const ex = h ? h.x + f.x * rch : player.x, ez = h ? h.z + f.z * rch : player.z;
-    const ey = h ? h.y + 0.04 : EYE + Math.sin(player.bob) * 0.018;
+
+  // cameras: smoothed, frame-rate independent, applied after the body has moved
+  if (rail.on) { cam.setPosition(rail.p.x, rail.p.y, rail.p.z); cam.lookAt(rail.l.x, rail.l.y, rail.l.z); camS.init = false; }
+  else {
     const yr = player.yaw * Math.PI / 180, pr = player.pitch * Math.PI / 180;
-    cam.setPosition(ex, ey, ez);
-    cam.lookAt(ex - Math.sin(yr) * Math.cos(pr), ey + Math.sin(pr), ez - Math.cos(yr) * Math.cos(pr));
+    const lookDir = { x: -Math.sin(yr) * Math.cos(pr), y: Math.sin(pr), z: -Math.cos(yr) * Math.cos(pr) };
+    if (view === 'third' && !NOBODY) {
+      // spring arm over the right shoulder: pull in rather than leave the room
+      const pivot = { x: player.x, y: 1.55, z: player.z };
+      const want = 1.6, side = 0.32, b = L[player.scene].bounds, zmax = L[player.scene].camMaxZ ?? b.z1 + 0.3;
+      let arm = want;
+      for (; arm > 0.35; arm -= 0.05) {
+        const px = pivot.x - lookDir.x * arm + rg.x * side, pz = pivot.z - lookDir.z * arm + rg.z * side;
+        if (px > b.x0 - 0.15 && px < b.x1 + 0.15 && pz > b.z0 - 0.35 && pz < zmax) break;
+      }
+      const tx = pivot.x - lookDir.x * arm + rg.x * side, ty = pivot.y + 0.28 - lookDir.y * arm, tz = pivot.z - lookDir.z * arm + rg.z * side;
+      if (!camS.init) Object.assign(camS, { x: tx, y: ty, z: tz, init: true });
+      camS.x = damp(camS.x, tx, 14, dt); camS.y = damp(camS.y, ty, 14, dt); camS.z = damp(camS.z, tz, 14, dt);
+      cam.setPosition(camS.x, camS.y, camS.z);
+      cam.lookAt(pivot.x + lookDir.x * 2 + rg.x * side * 0.5, pivot.y + 0.1 + lookDir.y * 2, pivot.z + lookDir.z * 2 + rg.z * side * 0.5);
+    } else {
+      // eyes: steady x/z in front of the face; height follows the head (crouches, breathing) but smoothed
+      const h = headPos();
+      const eyeT = h ? h.y + 0.04 : EYE;
+      camS.eye = camS.init ? damp(camS.eye, eyeT, player.act ? 9 : 6, dt) : eyeT;
+      player.bob += speed * dt * 5.2;
+      const bob = Math.sin(player.bob) * 0.012 * Math.min(1, speed / SPEED.fwd);
+      const rch = player.reach;
+      const ex = player.x + f.x * (rch - 0.16 + 0.12), ez = player.z + f.z * (rch - 0.16 + 0.12), ey = camS.eye + bob;
+      camS.init = true; camS.x = ex; camS.y = ey; camS.z = ez;
+      cam.setPosition(ex, ey, ez);
+      cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
+    }
   }
   updatePool(); updateProps();
   if (DEV) $('objective').textContent = `${player.scene} x ${player.x.toFixed(2)} z ${player.z.toFixed(2)} yaw ${((player.yaw % 360) + 360) % 360 | 0} ${state}`;
@@ -502,13 +566,22 @@ async function railShot(from, to, lookAt, ms) {
     if (k >= 1) break; await wait(16); }
 }
 function frameScene() { envs.shop.entity.enabled = true; if (envs.corridor) envs.corridor.entity.enabled = false; boss.setActive(false); player.scene = 'shop'; envs.shop.setTint(0.05, DARK); }
+// the present-day frame: the till itself. A slow push on the drawer while 輝叔 remembers;
+// at the end, the phone on the counter rings again.
+async function still(file, ms, from = 1.0, to = 1.08, ox = 0, oy = 0) {
+  const el = $('still'); el.src = A(file); el.style.transition = 'none';
+  el.style.transform = `scale(${from})`; el.style.opacity = 0; await wait(50);
+  el.style.transition = `transform ${ms}ms cubic-bezier(.3,.1,.3,1), opacity 900ms ease`;
+  el.style.opacity = 1; el.style.transform = `scale(${to}) translate(${ox}%, ${oy}%)`;
+  return () => { el.style.opacity = 0; };
+}
 async function frameStart() {
   frameScene(); rail.on = true; rail.p = sh.booth.from; rail.l = sh.booth.look;
-  black(1); card('present', true); await wait(1400); card(null, false); black(0);
-  const push = railShot(sh.booth.from, sh.booth.to, sh.booth.look, 7000);
-  await wait(900); play(S.vo); caption('vo', 3800);
-  await push; await wait(400);
-  black(1); await wait(700); card('past', true); await wait(1500); card(null, false);
+  black(1); card('present', true); await wait(1400); card(null, false);
+  const done = await still('frame-till.jpg', 8200, 1.02, 1.14, 1.5, 0.5); black(0);
+  await wait(1100); play(S.vo); caption('vo', 3800);
+  await wait(6200); black(1); await wait(500); done();
+  await wait(500); card('past', true); await wait(1500); card(null, false);
   rail.on = false; if (!NOBODY) fai.setActive(true); envs.shop.setTint(sh.tint, DARK);
   boss.setActive(true); placeChar(boss, sh.boss); anim(boss, 'count', true);
   setPlayer(sh.spawn, 'shop');
@@ -516,12 +589,12 @@ async function frameStart() {
 }
 async function frameEnd() {
   frameScene(); rail.on = true; rail.p = sh.booth.to; rail.l = sh.booth.look;
-  black(1); card('present', true); await wait(1400); card(null, false); black(0);
-  const drift = railShot(sh.booth.to, { x: sh.booth.to.x - 0.1, y: sh.booth.to.y, z: sh.booth.to.z - 0.35 }, sh.booth.look, 6500);
-  await wait(800); play(S.vo2); caption('vo2', 4600);
-  // the phone, once, far away
-  await wait(5200); S.ring.volume = 0.35; play(S.ring); await wait(1900); stop(S.ring);
-  await drift; black(1); await wait(900);
+  black(1); card('present', true); await wait(1400); card(null, false);
+  const done = await still('frame-phone.jpg', 9000, 1.0, 1.1, -1, 0.5); black(0);
+  await wait(900); play(S.vo2); caption('vo2', 4600);
+  // the phone on the counter, once more
+  await wait(5000); S.ring.volume = 0.7; play(S.ring); caption('s_ring', 1800); await wait(2100); stop(S.ring);
+  black(1); await wait(600); done(); await wait(500);
   $('end').style.display = 'flex'; $('langs').style.display = 'flex';
   document.exitPointerLock?.(); playing = false; state = 'end';
 }
@@ -533,14 +606,15 @@ function reset() {
   envs.shop.setTint(sh.tint, DARK); if (envs.corridor) envs.corridor.setTint(co.tint, DARK);
   boss.setActive(true); placeChar(boss, sh.boss); anim(boss, 'count', true);
   if (!NOBODY) fai.setActive(true);
-  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); notes.enabled = false; crack.enabled = false; crack.__w = 0; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2;
+  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2;
   for (const a of Object.values(S)) { a.pause(); a.currentTime = 0; }
 }
 async function begin() {
   initAudio(); if (actx && actx.state === 'suspended') actx.resume();
   $('start').style.display = 'none'; $('end').style.display = 'none'; $('langs').style.display = 'none';
-  reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1;
+  reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1; camS.init = false;
   if (!TOUCH) canvas.requestPointerLock?.();
+  setTimeout(() => { $('lookhint').style.opacity = !locked && !TOUCH ? 1 : 0; }, 400);
   S.drone.volume = 0; play(S.drone); fade(S.drone, 0.16, 4000);
   await frameStart();
   frozen = false;
@@ -556,7 +630,7 @@ go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
 window.__ready = true;
-window.__debug = { toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
+window.__debug = { handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
   go(x, z, yaw = player.yaw, pitch = player.pitch) { Object.assign(player, { x, z, yaw, pitch }); },
   async show(k) { await corridorReady; envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); } };
