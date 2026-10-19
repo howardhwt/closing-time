@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>收舖 Closing Time · 地府通用</title>
+<meta name="description" content="A first-person horror game set in a 1989 Hong Kong cha chaan teng and the corridor of 尾房. Built with PINOC by Viggle.">
+<meta property="og:title" content="收舖 Closing Time">
+<meta property="og:description" content="嗰晚埋數,錢櫃有幾張陰司紙。A playable Hong Kong urban legend, built with PINOC.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;900&family=Noto+Sans+TC:wght@400;500&family=Noto+Serif+SC:wght@500;900&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#e8e2d4; --dim:#8a8476; --red:#b3261e; --bg:#050606;
+    --serif:"Noto Serif TC",serif; --sans:"Noto Sans TC",system-ui,sans-serif; }
+  html[lang="zh-CN"] { --serif:"Noto Serif SC",serif; --sans:"Noto Sans SC",system-ui,sans-serif; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; background:var(--bg); color:var(--ink); overflow:hidden; font-family:var(--sans); touch-action:none; user-select:none; -webkit-user-select:none; }
+  #c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .layer { position:fixed; inset:0; pointer-events:none; }
+  #vignette { background:radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 35%, rgba(0,0,0,.55) 75%, rgba(0,0,0,.92) 100%); }
+  #grain { opacity:.10; mix-blend-mode:overlay; }
+  #black { background:#000; opacity:0; transition:opacity .08s linear; }
+  #fade { background:#000; opacity:0; transition:opacity .9s ease; }
+  #crosshair { position:fixed; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px; border-radius:50%; background:rgba(232,226,212,.55); pointer-events:none; opacity:0; }
+  #objective { position:fixed; top:22px; left:50%; transform:translateX(-50%); font-size:15px; letter-spacing:.08em; text-shadow:0 1px 6px #000; opacity:0; transition:opacity .6s; white-space:nowrap; pointer-events:none; }
+  #prompt { position:fixed; top:58%; left:50%; transform:translateX(-50%); font-size:14px; padding:6px 12px; border:1px solid rgba(232,226,212,.35); background:rgba(0,0,0,.45); opacity:0; transition:opacity .25s; pointer-events:none; letter-spacing:.06em; }
+  #caption { position:fixed; bottom:9%; left:50%; transform:translateX(-50%); text-align:center; font-family:var(--serif); font-weight:500; font-size:clamp(18px,2.6vw,30px); text-shadow:0 2px 10px #000,0 0 2px #000; opacity:0; transition:opacity .3s; pointer-events:none; width:max-content; max-width:90vw; }
+  #note { position:fixed; left:50%; top:46%; width:min(560px,78vw); transform:translate(-50%,-50%) rotate(-2deg) scale(.96); opacity:0; transition:opacity .35s, transform 2.4s ease-out; pointer-events:none; box-shadow:0 20px 80px #000; filter:saturate(.85) brightness(.9); }
+  #note.show { opacity:1; transform:translate(-50%,-50%) rotate(-1deg) scale(1.03); }
+  .card { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:radial-gradient(ellipse at center,#0d0f0f 0%,#000 75%); padding:24px; overflow:auto; touch-action:auto; }
+  .card h1 { font-family:var(--serif); font-weight:900; font-size:clamp(56px,10vw,120px); letter-spacing:.12em; line-height:1; }
+  .card .en { font-size:13px; letter-spacing:.5em; color:var(--dim); margin:14px 0 30px; }
+  .card p { font-family:var(--serif); font-size:clamp(16px,2vw,20px); line-height:1.9; max-width:34em; }
+  .card button.main { margin-top:32px; font:inherit; font-size:15px; letter-spacing:.2em; color:var(--ink); background:none; border:1px solid rgba(232,226,212,.5); padding:12px 30px; cursor:pointer; transition:background .2s,color .2s; }
+  .card button.main:hover { background:var(--ink); color:#000; }
+  .card button.main:disabled { opacity:.35; cursor:wait; }
+  .card .keys { margin-top:20px; font-size:12px; color:var(--dim); letter-spacing:.1em; }
+  .card .seal { display:inline-block; border:2px solid var(--red); color:var(--red); font-family:"Noto Serif TC",serif; font-weight:900; padding:4px 8px; font-size:14px; letter-spacing:.2em; margin-bottom:22px; transform:rotate(-3deg); }
+  .credit { margin-top:30px; font-size:11px; letter-spacing:.14em; color:var(--dim); }
+  .credit a { color:var(--ink); text-decoration:none; border-bottom:1px solid rgba(232,226,212,.3); }
+  .langs { position:fixed; top:18px; right:18px; display:flex; border:1px solid rgba(232,226,212,.3); z-index:5; }
+  .langs button { font:inherit; font-size:12px; letter-spacing:.1em; background:none; color:var(--dim); border:0; padding:6px 11px; cursor:pointer; }
+  .langs button[aria-checked="true"] { background:var(--ink); color:#000; }
+  #progress { width:220px; height:1px; background:rgba(232,226,212,.15); margin-top:26px; }
+  #progress i { display:block; height:100%; width:0; background:var(--ink); transition:width .2s; }
+  #end { display:none; }
+  #pool { position:fixed; left:0; top:0; width:600px; height:600px; pointer-events:none; opacity:0; border-radius:50%;
+    background:radial-gradient(circle, rgba(150,255,210,.22) 0%, rgba(90,200,160,.10) 35%, rgba(0,0,0,0) 70%); mix-blend-mode:screen; transition:opacity .4s; }
+  #chapter { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); font-family:var(--serif); font-size:clamp(16px,2vw,22px); letter-spacing:.5em; color:var(--dim); opacity:0; transition:opacity .8s; pointer-events:none; z-index:3; }
+  #caption.sfx { font-family:var(--sans); font-style:italic; font-size:clamp(14px,1.8vw,20px); color:#b9b3a4; }
+  #touch { display:none; }
+  #touch button { position:fixed; bottom:max(26px,env(safe-area-inset-bottom)); width:86px; height:86px; border-radius:50%; border:1px solid rgba(232,226,212,.45); background:rgba(0,0,0,.35); color:var(--ink); font:inherit; font-size:15px; letter-spacing:.1em; touch-action:none; }
+  #walkBtn { left:22px; }
+  #actBtn { right:22px; opacity:.25; }
+  #actBtn.on { opacity:1; border-color:var(--ink); }
+  #toast { position:fixed; left:50%; top:46%; transform:translate(-50%,-50%); font-size:13px; color:var(--dim); letter-spacing:.1em; opacity:0; transition:opacity .4s; pointer-events:none; }
+  .touchonly { display:none; }
+  html.touch .touchonly { display:block; }
+  html.touch .desk { display:none; }
+</style>
+  <script type="module" crossorigin src="./assets/main-WlE866wT.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/index-MFjPMdzC.js">
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="grain" class="layer"></canvas>
+<div id="vignette" class="layer"></div>
+<div id="pool"></div>
+<div id="black" class="layer"></div>
+<div id="chapter"></div>
+<div id="fade" class="layer"></div>
+<div id="crosshair"></div>
+<div id="objective"></div>
+<div id="prompt"></div>
+<div id="toast"></div>
+<img id="note" src="assets/note.jpg" alt="">
+<div id="caption"></div>
+<div id="touch"><button id="walkBtn" data-t="walk">行</button><button id="actBtn" data-t="act">互動</button></div>
+
+<div class="langs" id="langs" role="radiogroup" aria-label="Language"></div>
+
+<div id="start" class="card">
+  <div class="seal">地府通用</div>
+  <h1 data-t="title">收舖</h1>
+  <div class="en" data-t="titleSub">CLOSING TIME</div>
+  <p data-t="intro1"></p>
+  <p data-t="intro2"></p>
+  <div id="progress"><i></i></div>
+  <button id="go" class="main" disabled data-t="loading">載入中</button>
+  <div class="keys desk" data-t="keys"></div>
+  <div class="keys touchonly" data-t="keysTouch"></div>
+  <div class="keys touchonly" data-t="desktop" style="color:#c9a46a"></div>
+  <div class="credit"><span data-t="credit"></span> <a href="https://viggle.ai/pinoc/app" target="_blank" rel="noopener">PINOC by Viggle</a></div>
+</div>
+
+<div id="end" class="card">
+  <div class="seal">地府通用</div>
+  <h1 data-t="epTitle">01 冥鏹</h1>
+  <div class="en" data-t="epSub">THE MONEY NOBODY TOOK</div>
+  <p data-t="n2" style="letter-spacing:.2em"></p>
+  <button id="again" class="main" data-t="again">再玩一次</button>
+  <div class="credit">港詭古 @gonggwaigu · <span data-t="credit"></span> <a href="https://viggle.ai/pinoc/app" target="_blank" rel="noopener">PINOC by Viggle</a></div>
+</div>
+
+</body>
+</html>
