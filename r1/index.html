@@ -56,12 +56,13 @@
   #actBtn { right:22px; opacity:.25; }
   #touch #viewBtn { right:22px; bottom:max(126px,calc(env(safe-area-inset-bottom) + 100px)); width:58px; height:58px; font-size:12px; }
   #actBtn.on { opacity:1; border-color:var(--ink); }
+  #lookhint { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); font-size:12px; color:var(--dim); letter-spacing:.12em; opacity:0; transition:opacity .4s; pointer-events:none; }
   #toast { position:fixed; left:50%; top:46%; transform:translate(-50%,-50%); font-size:13px; color:var(--dim); letter-spacing:.1em; opacity:0; transition:opacity .4s; pointer-events:none; }
   .touchonly { display:none; }
   html.touch .touchonly { display:block; }
   html.touch .desk { display:none; }
 </style>
-  <script type="module" crossorigin src="./assets/main-Dm--rnf6.js"></script>
+  <script type="module" crossorigin src="./assets/main-eOotiRw7.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/index-BMj2ErFP.js">
 </head>
 <body>
@@ -77,6 +78,7 @@
 <div id="objective"></div>
 <div id="prompt"></div>
 <div id="toast"></div>
+<div id="lookhint" data-t="lookhint"></div>
 <img id="note" src="assets/note.jpg" alt="">
 <div id="caption"></div>
 <div id="touch"><button id="walkBtn" data-t="walk">行</button><button id="viewBtn" data-t="view">視角</button><button id="actBtn" data-t="act">互動</button></div>
