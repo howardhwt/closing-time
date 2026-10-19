@@ -14,7 +14,7 @@ const TABLES = [{ x: 0, z: 1.0 }, { x: 0, z: -1.25 }, { x: 0, z: -2.0 }, { x: 0,
 const TABLE_R = 0.55;
 const PHONE = { x: 0.65, z: -3.1 };
 const TILL = { x: -0.7, z: -3.1 };
-const GHOST_START = { x: 0.0, z: 4.6 };
+const GHOST_START = { x: 0.85, z: 4.9 };
 const DARK = { r: 0.012, g: 0.026, b: 0.03 };
 
 // ---- UI helpers ----
@@ -94,7 +94,7 @@ const ghost = await Character.load(scene, A('xiangge.vsplat'));
 await Animation.loadGlb(scene, A('idle.glb'), 'idle');
 ghost.playAnimation('idle', { loop: true });
 ghost.setReveal(0);
-ghost.setTint(0.45, DARK);
+ghost.setTint(0.55, DARK);
 const GHOST_Y = 0.1;
 ghost.setPosition(GHOST_START.x, GHOST_Y, GHOST_START.z);
 ghost.setRotation(0, 180, 0);
