@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>收舖 Closing Time · 地府通用</title>
+<meta name="description" content="A 60-second first-person horror walk through a 1989 Hong Kong cha chaan teng after closing. Built with PINOC by Viggle.">
+<meta property="og:title" content="收舖 Closing Time">
+<meta property="og:description" content="嗰晚埋數,錢櫃有幾張陰司紙。A playable Hong Kong urban legend, built with PINOC.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;900&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#e8e2d4; --dim:#8a8476; --red:#b3261e; --bg:#050606; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; background:var(--bg); color:var(--ink); overflow:hidden; font-family:"Noto Sans TC",system-ui,sans-serif; }
+  #c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .layer { position:fixed; inset:0; pointer-events:none; }
+  #vignette { background:radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 35%, rgba(0,0,0,.55) 75%, rgba(0,0,0,.92) 100%); }
+  #grain { opacity:.10; mix-blend-mode:overlay; }
+  #black { background:#000; opacity:0; transition:opacity .08s linear; }
+  #crosshair { position:fixed; left:50%; top:50%; width:4px; height:4px; margin:-2px 0 0 -2px; border-radius:50%; background:rgba(232,226,212,.55); pointer-events:none; opacity:0; }
+  #objective { position:fixed; top:22px; left:50%; transform:translateX(-50%); font-size:15px; letter-spacing:.08em; color:var(--ink); text-shadow:0 1px 6px #000; opacity:0; transition:opacity .6s; white-space:nowrap; pointer-events:none; }
+  #objective small { display:block; text-align:center; font-size:11px; color:var(--dim); letter-spacing:.12em; margin-top:3px; }
+  #prompt { position:fixed; top:58%; left:50%; transform:translateX(-50%); font-size:14px; padding:6px 12px; border:1px solid rgba(232,226,212,.35); background:rgba(0,0,0,.45); opacity:0; transition:opacity .25s; pointer-events:none; letter-spacing:.06em; }
+  #caption { position:fixed; bottom:9%; left:50%; transform:translateX(-50%); text-align:center; font-family:"Noto Serif TC",serif; font-weight:500; font-size:clamp(20px,2.6vw,30px); text-shadow:0 2px 10px #000,0 0 2px #000; opacity:0; transition:opacity .3s; pointer-events:none; max-width:90vw; }
+  #caption small { display:block; font-family:"Noto Sans TC",sans-serif; font-size:13px; color:var(--dim); margin-top:6px; letter-spacing:.06em; }
+  #note { position:fixed; left:50%; top:46%; width:min(560px,70vw); transform:translate(-50%,-50%) rotate(-2deg) scale(.96); opacity:0; transition:opacity .35s, transform 2.4s ease-out; pointer-events:none; box-shadow:0 20px 80px #000; filter:saturate(.85) brightness(.9); }
+  #note.show { opacity:1; transform:translate(-50%,-50%) rotate(-1deg) scale(1.03); }
+  .card { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:radial-gradient(ellipse at center,#0d0f0f 0%,#000 75%); padding:24px; }
+  .card h1 { font-family:"Noto Serif TC",serif; font-weight:900; font-size:clamp(56px,10vw,120px); letter-spacing:.12em; line-height:1; }
+  .card .en { font-size:13px; letter-spacing:.5em; color:var(--dim); margin:14px 0 34px; text-transform:uppercase; }
+  .card p { font-family:"Noto Serif TC",serif; font-size:clamp(16px,2vw,20px); color:var(--ink); line-height:1.9; max-width:34em; }
+  .card p.sub { font-family:"Noto Sans TC",sans-serif; font-size:13px; color:var(--dim); line-height:1.7; margin-top:6px; }
+  .card button { margin-top:36px; font:inherit; font-size:15px; letter-spacing:.2em; color:var(--ink); background:none; border:1px solid rgba(232,226,212,.5); padding:12px 30px; cursor:pointer; transition:background .2s,color .2s; }
+  .card button:hover { background:var(--ink); color:#000; }
+  .card button:disabled { opacity:.35; cursor:wait; }
+  .card .keys { margin-top:22px; font-size:12px; color:var(--dim); letter-spacing:.1em; }
+  .card .seal { display:inline-block; border:2px solid var(--red); color:var(--red); font-family:"Noto Serif TC",serif; font-weight:900; padding:4px 8px; font-size:14px; letter-spacing:.2em; margin-bottom:22px; transform:rotate(-3deg); }
+  .credit { margin-top:34px; text-align:center; font-size:11px; letter-spacing:.18em; color:var(--dim); }
+  .credit a { color:var(--ink); text-decoration:none; border-bottom:1px solid rgba(232,226,212,.3); }
+  #progress { width:220px; height:1px; background:rgba(232,226,212,.15); margin-top:30px; }
+  #progress i { display:block; height:100%; width:0; background:var(--ink); transition:width .2s; }
+  #end { display:none; }
+  #mobile { display:none; margin-top:18px; font-size:12px; color:#c9a46a; }
+  @media (hover:none) and (pointer:coarse) { #mobile { display:block; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<canvas id="grain" class="layer"></canvas>
+<div id="vignette" class="layer"></div>
+<div id="black" class="layer"></div>
+<div id="crosshair"></div>
+<div id="objective"></div>
+<div id="prompt"></div>
+<img id="note" src="assets/note.jpg" alt="">
+<div id="caption"></div>
+
+<div id="start" class="card">
+  <div class="seal">地府通用</div>
+  <h1>收舖</h1>
+  <div class="en">Closing Time</div>
+  <p>八九年,新界一間茶餐廳。<br>收咗舖,你係最後一個。</p>
+  <p class="sub">1989, a cha chaan teng in the New Territories. The shop is closed. You are the last one here.</p>
+  <div id="progress"><i></i></div>
+  <button id="go" disabled>載入中 LOADING</button>
+  <div class="keys">滑鼠 Mouse 望 look · WASD 行 walk · E / 撳 click 互動 interact · 戴耳筒 headphones on</div>
+  <div id="mobile">Best on desktop with a mouse.</div>
+  <div class="credit">A 港詭古 urban legend · built with <a href="https://viggle.ai/pinoc/app" target="_blank" rel="noopener">PINOC by Viggle</a></div>
+</div>
+
+<div id="end" class="card">
+  <div class="seal">地府通用</div>
+  <h1>01 冥鏹</h1>
+  <div class="en">The money nobody took</div>
+  <p>銀碼當面點清,離開櫃枱恕不負責。</p>
+  <p class="sub">Count your money at the counter. Once you walk away, it's on you.</p>
+  <button id="again">再玩一次 PLAY AGAIN</button>
+  <div class="credit">港詭古 @gonggwaigu · scene, character &amp; motion made with <a href="https://viggle.ai/pinoc/app" target="_blank" rel="noopener">PINOC by Viggle</a></div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

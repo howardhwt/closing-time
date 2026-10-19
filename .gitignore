@@ -1,0 +1,13 @@
+node_modules/
+dist/
+spare/
+*.log
+probe.html
+view.html
+src/probe.js
+src/view.js
+shot.mjs
+play.mjs
+play2.mjs
+fps.mjs
+fps2.mjs
