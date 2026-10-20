@@ -141,7 +141,7 @@ function applyMix() {
 }
 function mahjongNear(d) {   // d = metres to the green door: a thin door getting thinner
   const k = Math.max(0, Math.min(1, 1 - (d - 0.6) / 7.5));
-  if (mjGain) { mjGain.gain.value = 0.06 + 1.3 * Math.pow(k, 1.7); mjLow.frequency.value = 380 + 3600 * k * k; }
+  if (mjGain) { mjGain.gain.value = 0.06 + 0.94 * Math.pow(k, 1.7); mjLow.frequency.value = 380 + 1420 * k * k; }   // tops out at the file's own level, always behind a closed door
   else S.mahjong.volume = Math.min(1, 0.06 + 0.94 * Math.pow(k, 1.7));
 }
 function mahjongStop() { if (mjGain) mjGain.gain.value = 0; S.mahjong.pause(); }
@@ -667,7 +667,7 @@ async function toCorridor() {
   if (!envs.corridor) { $('toast').textContent = t('loadingCorridor'); $('toast').style.opacity = 1; await corridorReady; $('toast').style.opacity = 0; }
   envs.shop.entity.enabled = false; envs.corridor.entity.enabled = true; boss.setActive(false);
   setPlayer(co.spawn, 'corridor');
-  mahjongNear(dist(co.door)); play(S.mahjong);
+  mahjongNear(dist(co.door)); play(S.mahjong, Math.random() * 25);   // a different stretch of the loop each run
   await wait(500); fadeOut(0); frozen = false; fade(S.drone, 0.22, 3000);
   setTimeout(() => caption('s_mahjong', 2600), 1600);
   state = 'door'; objective('o_door');
