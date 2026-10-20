@@ -785,13 +785,47 @@ $('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); if (menuOpe
 // ---------------------------------------------------------------------------
 // ?demo: a scripted ~47 s cut for the launch video (screen recording). Cameras on rails, no input.
 // ---------------------------------------------------------------------------
+// ?demo&rec=16x9|9x16: the page records its own cut (game canvas + captions + cards + game audio) and saves it.
+function startRecorder(kind) {
+  const OW = kind === '9x16' ? 1080 : 1920, OH = kind === '9x16' ? 1920 : 1080, A = OW / OH;
+  const out = document.createElement('canvas'); out.width = OW; out.height = OH; const g = out.getContext('2d');
+  const crop = () => { const vw = innerWidth, vh = innerHeight; let cw = vw, ch = vh; if (vw / vh > A) cw = vh * A; else ch = vw / A; return { cx: (vw - cw) / 2, cy: (vh - ch) / 2, cw, ch }; };
+  const wrap = (text, maxW) => { const out = []; let line = ''; for (const ch of [...text]) { if (g.measureText(line + ch).width > maxW && line) { out.push(line); line = ch.trim() ? ch : ''; } else line += ch; } if (line) out.push(line);
+    // prefer breaking at spaces for latin text
+    if (/[a-z]/i.test(text)) { const words = text.split(' '), o = []; let l = ''; for (const w of words) { const t = l ? l + ' ' + w : w; if (g.measureText(t).width > maxW && l) { o.push(l); l = w; } else l = t; } if (l) o.push(l); return o; } return out; };
+  const drawText = (el, c, sx, sy, opa) => { if (!el || opa <= 0.01) return; const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); const txt = el.textContent.trim(); if (!txt) return;
+    const fs = parseFloat(cs.fontSize) * sy; g.font = `${cs.fontStyle} ${cs.fontWeight} ${fs}px ${cs.fontFamily}`; g.fillStyle = cs.color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.globalAlpha = opa; g.shadowColor = 'rgba(0,0,0,.9)'; g.shadowBlur = 10 * sy;
+    const lines = wrap(txt, OW * 0.88), lh = fs * 1.35, cxp = OW / 2 + ((r.left + r.width / 2) - (c.cx + c.cw / 2)) * sx * (kind === '9x16' ? 0 : 1), cyp = (r.top + r.height / 2 - c.cy) * sy;
+    lines.forEach((ln, i) => g.fillText(ln, cxp, cyp + (i - (lines.length - 1) / 2) * lh)); g.globalAlpha = 1; g.shadowBlur = 0; };
+  const vstream = out.captureStream(30);
+  let astream = null; if (actx && buses.master) { const dst = actx.createMediaStreamDestination(); buses.master.connect(dst); astream = dst.stream; }
+  const stream = new MediaStream([...vstream.getVideoTracks(), ...(astream ? astream.getAudioTracks() : [])]);
+  const mime = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16e6, audioBitsPerSecond: 192e3 }); const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const frame = () => { const c = crop(), sx = OW / c.cw, sy = OH / c.ch, kx = canvas.width / innerWidth, ky = canvas.height / innerHeight;
+    g.filter = LITE ? 'none' : 'contrast(1.04) saturate(0.85) brightness(1.3)';
+    g.drawImage(canvas, c.cx * kx, c.cy * ky, c.cw * kx, c.ch * ky, 0, 0, OW, OH); g.filter = 'none';
+    const vg = g.createRadialGradient(OW / 2, OH * 0.55, Math.min(OW, OH) * 0.3, OW / 2, OH * 0.55, Math.max(OW, OH) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.6)'); g.fillStyle = vg; g.fillRect(0, 0, OW, OH);
+    for (const id of ['black', 'fade']) { const o = +getComputedStyle($(id)).opacity; if (o > 0) { g.globalAlpha = o; g.fillStyle = '#000'; g.fillRect(0, 0, OW, OH); g.globalAlpha = 1; } }
+    drawText($('chapter'), c, sx, sy, +getComputedStyle($('chapter')).opacity);
+    drawText($('caption'), c, sx, sy, +getComputedStyle($('caption')).opacity);
+    const ov = document.getElementById('demoOv'); if (ov) { const o = +getComputedStyle(ov).opacity; for (const el of ov.children) drawText(el, c, sx, sy, o); } };
+  scene.app.on('frameend', frame);
+  rec.start(1000);
+  return () => new Promise((res) => { rec.onstop = () => { scene.app.off('frameend', frame); const b = new Blob(chunks, { type: mime });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `closing-time-${kind}-${lang}.${mime.includes('mp4') ? 'mp4' : 'webm'}`; document.body.appendChild(a); a.click(); res(); }; rec.stop(); });
+}
 async function runDemo() {
+  const recKind = Q.get('rec'); let stopRec = null;
   initAudio(); if (actx && actx.state === 'suspended') await actx.resume();
   for (const id of ['start', 'langs', 'legend', 'crosshair', 'menuBtn', 'lookhint', 'objective', 'prompt']) { const e = $(id); if (e) e.style.display = 'none'; }
   reset(); await corridorReady; playing = false;
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;opacity:0;transition:opacity .5s;z-index:4;font-family:var(--serif);padding:24px';
-  document.body.appendChild(ov);
+  ov.id = 'demoOv'; document.body.appendChild(ov);
+  if (recKind) { await wait(300); stopRec = startRecorder(recKind); }
   const over = async (html, ms) => { ov.innerHTML = html; ov.style.opacity = 1; await wait(ms); ov.style.opacity = 0; await wait(500); };
   const scene = (k) => { envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); envs[k].setTint(L[k].tint, DARK); };
   const cam = (p, l) => { rail.on = true; rail.p = p; rail.l = l; };
@@ -814,13 +848,13 @@ async function runDemo() {
   // 0:07 the shop, the phone, 祥哥 answers
   scene('shop'); placeBoss(sh.bossPhone); anim(boss, 'count', true);
   faiAt(0.45, 0.45, 119); anim(fai, 'idle', true);
-  cam({ x: -0.62, y: 1.7, z: 1.25 }, { x: 2.1, y: 1.25, z: -0.55 });
+  cam({ x: -0.46, y: 1.72, z: 1.48 }, { x: 2.2, y: 1.4, z: -0.58 });
   S.ring.volume = 0.6; play(S.ring); black(0); caption('s_ring', 1500);
-  await dolly({ x: -0.62, y: 1.7, z: 1.25 }, { x: -0.25, y: 1.62, z: 0.95 }, { x: 2.1, y: 1.25, z: -0.55 }, { x: 2.1, y: 1.3, z: -0.55 }, 1500);
+  await dolly({ x: -0.46, y: 1.72, z: 1.48 }, { x: -0.3, y: 1.68, z: 1.42 }, { x: 2.2, y: 1.4, z: -0.58 }, { x: 2.2, y: 1.42, z: -0.58 }, 1500);
   bossS.rate = 6; anim(boss, 'phone', false); await wait(1250); stop(S.ring); boss.playbackSpeed = 0.62;
   play(S.call); caption('call1', 1700); await wait(2200); caption('call2', 1300); await wait(1500);
   boss.playbackSpeed = 1; bossS.rate = 9; anim(boss, 'send', false); S.call.pause(); play(S.order); caption('order', 2800);
-  await dolly({ x: -0.25, y: 1.62, z: 0.95 }, { x: 0.05, y: 1.58, z: 0.75 }, { x: 2.1, y: 1.3, z: -0.55 }, { x: 2.15, y: 1.35, z: -0.58 }, 3000);
+  await dolly({ x: -0.3, y: 1.68, z: 1.42 }, { x: -0.08, y: 1.62, z: 1.33 }, { x: 2.2, y: 1.42, z: -0.58 }, { x: 2.2, y: 1.45, z: -0.58 }, 3000);
 
   // 0:16 the corridor: walking to the green door, the mahjong getting louder
   black(1); await wait(250); scene('corridor'); anim(fai, 'walk', true); faiAt(0, 3.2, 180);
@@ -857,6 +891,7 @@ async function runDemo() {
   await wait(500);
   await over(`<div style="font-family:var(--sans);font-size:clamp(14px,1.7vw,20px);letter-spacing:.14em;color:var(--dim);margin-bottom:12px">${lang === 'en' ? 'Characters, motion and both scenes made with' : '角色、動作同場景全部用'}</div><div style="font-weight:900;font-size:clamp(34px,5vw,64px);letter-spacing:.1em">PINOC <span style="font-weight:500;font-size:.5em;letter-spacing:.2em">by Viggle</span></div>`, 2600);
   await over(`<div style="font-weight:900;font-size:clamp(28px,4vw,52px);letter-spacing:.14em">${lang === 'en' ? 'Night 1 · play free in your browser' : '第一晚 · 瀏覽器免費玩'}</div><div style="font-family:var(--sans);font-size:clamp(14px,1.8vw,22px);letter-spacing:.08em;color:var(--ink);margin-top:16px">howardhwt.github.io/closing-time</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.3em;color:var(--dim);margin-top:22px">${t('n2')}</div>`, 3200);
+  if (stopRec) { await wait(400); await stopRec(); }
   window.__demoDone = true;
 }
 
