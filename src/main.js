@@ -500,7 +500,7 @@ async function interact() {
     caption('silence', 1800); fade(S.drone, 0.12, 900); await wait(2600);
     // he steps back; the door opens a crack onto black, and the notes slide out to his feet
     player.act = 'step'; await walkTo(co.watchStand.x, co.watchStand.z, 0.5); player.act = null;
-    await turnTo(-6, -40, 700);
+    await turnTo(-6, -50, 700);
     play(S.door); caption('s_crack', 2600); await openCrack(0.13, 2600);
     caption('s_notes', 2400); play(S.money); await slideNotes();
     await wait(600);
