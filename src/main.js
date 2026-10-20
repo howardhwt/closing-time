@@ -866,7 +866,7 @@ go.disabled = false; applyLang();
 go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
-if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', (e) => { e.stopImmediatePropagation(); runDemo(); }, { capture: true }); }
+if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', async (e) => { e.stopImmediatePropagation(); try { await document.documentElement.requestFullscreen(); } catch { /* ignore */ } await wait(1200); runDemo(); }, { capture: true }); }
 window.__ready = true;
 window.__debug = { bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
