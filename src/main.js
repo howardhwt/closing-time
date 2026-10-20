@@ -1,6 +1,7 @@
 import { Scene, Environment, Character, Animation } from '@viggle/splat-engine';
 import { Vec3, Entity, StandardMaterial, Texture, Asset, BLEND_NORMAL } from 'playcanvas';
 import { LANGS, LANG_DISPLAY, T, detectLang, saveLang } from './i18n.js';
+import STARTLE_PATH from './startle-path.json';
 
 // 收舖 Closing Time, Release 1: Night 1 and the present-day frame (GDD, 21 Oct 2026).
 // You are 阿輝, the delivery boy. No fail state. The residents are never seen.
@@ -411,6 +412,7 @@ const angDamp = (cur, target, rate, dt) => { const d = ((target - cur + 540) % 3
 const SPEED = { fwd: 1.35, back: 0.75, side: 0.9 };    // m/s, a cautious delivery boy
 const move = { vx: 0, vz: 0, lx: 0, lz: 0 };           // world velocity; local (forward/right) speed for the animation
 const camS = { x: 0, y: EYE, z: 0, eye: EYE, init: false, bodyYaw: 0 };
+const startle = { t0: 0, x0: 0, z0: 0, yaw: 0 };
 let lastPos = { x: 0, z: 0 };
 
 let last = performance.now();
@@ -433,6 +435,11 @@ scene.app.on('update', () => {
   move.vx = damp(move.vx, tvx, im > 0 ? 9 : 12, dt); move.vz = damp(move.vz, tvz, im > 0 ? 9 : 12, dt);
   if (Math.hypot(move.vx, move.vz) > 0.01 && !player.auto) {
     if (DEV) { player.x += move.vx * dt * 2; player.z += move.vz * dt * 2; } else [player.x, player.z] = collide(player.x + move.vx * dt, player.z + move.vz * dt);
+  }
+  if (player.act === 'startle') {
+    const P = STARTLE_PATH.xz, k = Math.min(P.length - 1.001, (performance.now() - startle.t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
+    const lx = P[i][0] + (P[i + 1][0] - P[i][0]) * u, lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u, r = startle.yaw * Math.PI / 180;
+    [player.x, player.z] = collide(startle.x0 + lx * Math.cos(r) + lz * Math.sin(r), startle.z0 - lx * Math.sin(r) + lz * Math.cos(r));
   }
   // what actually happened this frame (covers scripted walks too) drives the legs
   const dvx = (player.x - lastPos.x) / Math.max(dt, 1e-3), dvz = (player.z - lastPos.z) / Math.max(dt, 1e-3); lastPos = { x: player.x, z: player.z };
@@ -483,10 +490,6 @@ scene.app.on('update', () => {
       const bob = Math.sin(player.bob) * 0.012 * Math.min(1, speed / SPEED.fwd);
       const rch = player.reach;
       let ex = player.x + f.x * (rch - 0.16 + 0.12), ez = player.z + f.z * (rch - 0.16 + 0.12); const ey = camS.eye + bob;
-      if (player.act === 'startle' && h) {   // ride his head while the clip walks him back, keeping the offset it started with
-        if (!camS.ride) camS.ride = { dx: ex - h.x, dz: ez - h.z };
-        ex = h.x + camS.ride.dx; ez = h.z + camS.ride.dz;
-      } else camS.ride = null;
       camS.init = true; camS.x = ex; camS.y = ey; camS.z = ez;
       cam.setPosition(ex, ey, ez);
       cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
@@ -569,13 +572,12 @@ async function interact() {
     play(S.door); caption('s_crack', 2600); openCrack(0.13, 380);
     await wait(120);
     if (ANIMS.has('startle')) {
-      // the clip carries its own two steps back (off4, about 0.55 m): the body moves, the camera rides his head,
-      // and when it ends the player is moved to where his feet landed
-      const p0 = bonePos(PELVIS)?.clone(); player.act = 'startle'; anim(fai, 'startle', false, 0.06); fai.playbackSpeed = 1;
+      // the clip carries its own two steps back (off4, about 0.55 m): its root motion moves the player, and the camera with him
+      // the engine plays clips in place, so his travel is replayed from the clip's own pelvis track (baked offline)
+      startle.t0 = performance.now(); startle.x0 = player.x; startle.z0 = player.z; startle.yaw = camS.bodyYaw + 180;
+      player.act = 'startle'; anim(fai, 'startle', false, 0.06); fai.playbackSpeed = 1;
       turnTo(-6, -50, 1400); await wait(3900);
-      const p1 = bonePos(PELVIS);
-      if (p0 && p1) { player.x += p1.x - p0.x; player.z += p1.z - p0.z; }
-      anim(fai, 'idle', true, 0.0); player.act = null;
+      player.act = null; anim(fai, 'idle', true, 0.3);
     } else {
       player.act = 'step'; turnTo(-6, -50, 900); await walkTo(co.watchStand.x, co.watchStand.z, 0.9); await wait(200); player.act = null;
     }
