@@ -14,6 +14,7 @@ export function saveLang(l) { try { localStorage.setItem(KEY, l); } catch { /* i
 
 export const T = {
   en: {
+    m_title2: 'Back to title', 
     o_look: 'Closing time. Have a last look around the shop', p_stairs: '[E] Go downstairs', o_wait: '祥哥 is counting the till. Look around', o_boss: '祥哥 is looking for you. Go to the counter', p_boss: '[E] Go to 祥哥', inv: 'Money ×4', m_btn: 'Menu', m_title: 'Paused', m_resume: 'Resume', m_view: 'Switch view (V)', m_restart: 'Restart the night', m_master: 'Master volume', m_music: 'Music and drone', m_sfx: 'Sound effects', m_voice: 'Voices', m_sens: 'Look speed', m_legend: 'Show controls on screen', lg_move: 'walk', lg_look: 'move the mouse to look · click to lock', lg_act: 'interact', lg_view: 'first / third person', lg_menu: 'menu', lg_hide: 'hide this',
     vo2: 'The second night, same time, the phone rang again.',
     s_ring: '[the phone rings]', s_mahjong: '[mahjong tiles behind the green door]', s_tube: '[the tube light buzzes]',
@@ -54,6 +55,7 @@ export const T = {
     walk: 'WALK', act: 'INTERACT', view: 'VIEW', desktop: 'Plays best on desktop with headphones.',
   },
   'zh-CN': {
+    m_title2: '返回主菜单', 
     o_look: '快打烊了。在店里最后看一圈', p_stairs: '[E] 下楼', o_wait: '祥哥在点钱。随便走走', o_boss: '祥哥在找你。去柜台', p_boss: '[E] 去找祥哥', inv: '钱 ×4', m_btn: '菜单', m_title: '暂停', m_resume: '继续', m_view: '切换视角 (V)', m_restart: '重新开始', m_master: '总音量', m_music: '音乐与环境声', m_sfx: '音效', m_voice: '人声', m_sens: '视角速度', m_legend: '在画面显示操作说明', lg_move: '走路', lg_look: '移动鼠标看 · 点击锁定', lg_act: '互动', lg_view: '第一/第三人称', lg_menu: '菜单', lg_hide: '隐藏说明',
     vo2: '「第二晚,同一个钟点,电话又响。」',
     s_ring: '[电话响]', s_mahjong: '[绿门后面有人打麻将]', s_tube: '[光管嗡嗡响]',
@@ -94,6 +96,7 @@ export const T = {
     walk: '走', act: '互动', view: '视角', desktop: '建议用电脑并戴耳机游玩。',
   },
   'zh-TW': {
+    m_title2: '返回主畫面', 
     o_look: '就收舖喇。喺舖頭最後行一轉', p_stairs: '[E] 落樓', o_wait: '祥哥數緊錢。周圍行下', o_boss: '祥哥搵緊你。埋去櫃枱', p_boss: '[E] 埋去搵祥哥', inv: '錢 ×4', m_btn: '選單', m_title: '暫停', m_resume: '繼續', m_view: '轉視角 (V)', m_restart: '重新開始', m_master: '總音量', m_music: '音樂同環境聲', m_sfx: '音效', m_voice: '人聲', m_sens: '視角速度', m_legend: '喺畫面顯示操作', lg_move: '行', lg_look: '郁滑鼠望 · 撳一下鎖定', lg_act: '互動', lg_view: '第一/第三身', lg_menu: '選單', lg_hide: '收起',
     vo2: '「第二晚,同一個鐘數,電話又響。」',
     s_ring: '[電話響]', s_mahjong: '[綠色門後面有人打麻雀]', s_tube: '[光管嗡嗡聲]',
