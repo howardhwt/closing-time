@@ -238,6 +238,7 @@ const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowe
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const carry = { bag: false, notes: false, pocket: false };
+let demoOn = false;   // the scripted demo shows held props on the outside cameras too
 const floorPose = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, r: 0 }));
 let bagAt = null;
 function updateProps() {
@@ -247,9 +248,9 @@ function updateProps() {
     return { x: c.x + f.x * ahead + rt.x * side + u.x * (-down + sw), y: c.y + f.y * ahead + rt.y * side + u.y * (-down + sw), z: c.z + f.z * ahead + rt.z * side + u.z * (-down + sw) }; };
   const handAt = (i) => bonePos(i);
   const third = view === 'third' && !NOBODY;
-  if (carry.bag && !rail.on && !third) {
-    const p = view === 'third' ? handAt(HAND_L) : heldAt(-0.26, 0.22, 0.55);
-    if (p) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
+  if (carry.bag && ((!rail.on && !third) || demoOn)) {
+    const out = rail.on || third; const p = out ? handAt(HAND_L) : heldAt(-0.26, 0.22, 0.55);
+    if (p && !(out && behindBody(p))) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
   } else if (bagAt && corridor && !(third && behindBody(bagAt))) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
   else bag.enabled = false;
   floorNotes.forEach((n, i) => { n.enabled = notesShown && !(third && behindBody(floorPose[i])); if (n.enabled) { n.setPosition(floorPose[i].x, 0.004 + i * 0.002, floorPose[i].z); n.setEulerAngles(0, floorPose[i].r, 0); } });
@@ -268,14 +269,33 @@ const crack = new Entity('crack', scene.app);
 crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled = false; scene.app.root.addChild(crack);
 { const ov = scene.app.scene.layers.getLayerByName('OverlaySplats'); if (ov) crack.render.layers = [ov.id]; }
 { const m = new StandardMaterial(); m.useLighting = false; m.diffuse.set(0, 0, 0); m.emissive.set(0, 0, 0); m.update(); crack.render.material = m; }
+// The green door really opens: the leaf (cut from the scene's own head-on view) swings inward on its left hinge
+// over a black doorway. `to` is the old gap width in metres; 0.13 opens it about 22 degrees.
+const DOOR = { x0: -0.55, w: 0.79, h: 2.29 };
+const doorVoid = new Entity('doorVoid', scene.app), doorPivot = new Entity('doorPivot', scene.app), doorLeaf = new Entity('doorLeaf', scene.app);
+{ const ovl = scene.app.scene.layers.getLayerByName('OverlaySplats')?.id ?? 0;
+  doorVoid.addComponent('render', { type: 'box', castShadows: false }); doorVoid.render.layers = [ovl];
+  const vm = new StandardMaterial(); vm.useLighting = false; vm.diffuse.set(0, 0, 0); vm.emissive.set(0, 0, 0); vm.update(); doorVoid.render.material = vm;
+  doorLeaf.addComponent('render', { type: 'box', castShadows: false }); doorLeaf.render.layers = [ovl];
+  const lm = new StandardMaterial(); lm.useLighting = false; lm.diffuse.set(0, 0, 0); lm.emissive.set(0.86, 0.86, 0.86);
+  lm.blendType = BLEND_NORMAL; lm.opacity = 1; lm.depthTest = false; lm.update(); doorLeaf.render.material = lm;   // transparent queue: drawn after the black, always on top of it
+  scene.app.assets.loadFromUrl(A('door-leaf.jpg'), 'texture', (err, asset) => { if (!err) { lm.emissiveMap = asset.resource; lm.update(); } });
+  scene.app.root.addChild(doorVoid); scene.app.root.addChild(doorPivot); doorPivot.addChild(doorLeaf);
+  doorVoid.enabled = false; doorPivot.enabled = false; }
+function placeDoor(angle) {
+  const d = L.corridor.door;
+  doorVoid.setPosition(DOOR.x0 + DOOR.w / 2, DOOR.h / 2, d.z + 0.004); doorVoid.setLocalScale(DOOR.w + 0.01, DOOR.h + 0.01, 0.002);
+  doorPivot.setPosition(DOOR.x0, 0, d.z + 0.008); doorPivot.setEulerAngles(0, angle, 0);
+  doorLeaf.setLocalPosition(DOOR.w / 2, DOOR.h / 2, 0); doorLeaf.setLocalScale(DOOR.w, DOOR.h, 0.004);
+}
 async function openCrack(to, ms) {
-  const d = L.corridor.door; crack.enabled = true; const w0 = crack.__w || 0; const t0 = performance.now();
-  // opening: it gives with a jerk (a third of the gap in the first eighth), then creeps the rest of the way
+  const w0 = crack.__w || 0; const t0 = performance.now(); const A0 = w0 * 170, A1 = to * 170;
+  // it gives with a jerk (a third of the way in the first eighth), then creeps the rest
   const ease = (k) => to > w0 ? (k < 0.12 ? 0.35 * (k / 0.12) * (2 - k / 0.12) : 0.35 + 0.65 * (1 - Math.pow(1 - (k - 0.12) / 0.88, 3))) : k * k * (3 - 2 * k);
   if (to > w0 && ms > 300) jolt.a = 0.012;
-  for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), w = w0 + (to - w0) * ease(k); crack.__w = w;
-    crack.setLocalScale(Math.max(0.001, w), d.h + 0.01, 0.02); crack.setPosition(d.latchX - w / 2, (d.h + 0.01) / 2, d.z + 0.012); if (k >= 1) break; await wait(16); }
-  if (to <= 0.001) crack.enabled = false;
+  doorVoid.enabled = true; doorPivot.enabled = true;
+  for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = ease(k); crack.__w = w0 + (to - w0) * e; placeDoor(A0 + (A1 - A0) * e); if (k >= 1) break; await wait(16); }
+  if (to <= 0.001) { doorVoid.enabled = false; doorPivot.enabled = false; }
 }
 async function slideNotes() {
   const p = L.corridor.floorMoney; const z0 = L.corridor.door.z + 0.02; const t0 = performance.now();
@@ -736,7 +756,7 @@ function reset() {
   envs.shop.setTint(sh.tint, DARK); if (envs.corridor) envs.corridor.setTint(co.tint, DARK);
   boss.setActive(true); placeBoss(sh.boss); anim(boss, 'count', true);
   if (!NOBODY) fai.setActive(true);
-  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2; carry.pocket = false; bossS.rate = 2.5; closeMenu();
+  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; doorVoid.enabled = false; doorPivot.enabled = false; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2; carry.pocket = false; bossS.rate = 2.5; closeMenu();
   for (const a of Object.values(S)) { a.pause(); a.currentTime = 0; }
 }
 async function begin() {
@@ -810,6 +830,7 @@ function startRecorder(kind) {
     g.filter = LITE ? 'none' : 'contrast(1.04) saturate(0.85) brightness(1.3)';
     g.drawImage(canvas, c.cx * kx, c.cy * ky, c.cw * kx, c.ch * ky, 0, 0, OW, OH); g.filter = 'none';
     const vg = g.createRadialGradient(OW / 2, OH * 0.55, Math.min(OW, OH) * 0.3, OW / 2, OH * 0.55, Math.max(OW, OH) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.6)'); g.fillStyle = vg; g.fillRect(0, 0, OW, OH);
+    { const st = $('still'), o = +getComputedStyle(st).opacity; if (o > 0.01 && st.complete && st.naturalWidth) { const r = st.getBoundingClientRect(); g.globalAlpha = o; g.filter = 'brightness(.82) contrast(1.05) saturate(.85)'; g.drawImage(st, (r.left - c.cx) * sx, (r.top - c.cy) * sy, r.width * sx, r.height * sy); g.filter = 'none'; g.globalAlpha = 1; } }
     for (const id of ['black', 'fade']) { const o = +getComputedStyle($(id)).opacity; if (o > 0) { g.globalAlpha = o; g.fillStyle = '#000'; g.fillRect(0, 0, OW, OH); g.globalAlpha = 1; } }
     drawText($('chapter'), c, sx, sy, +getComputedStyle($('chapter')).opacity);
     drawText($('caption'), c, sx, sy, +getComputedStyle($('caption')).opacity);
@@ -821,7 +842,7 @@ function startRecorder(kind) {
 }
 async function runDemo() {
   const recKind = Q.get('rec'); let stopRec = null;
-  initAudio(); if (actx && actx.state === 'suspended') await actx.resume();
+  initAudio(); if (actx && actx.state === 'suspended') await actx.resume(); demoOn = true;
   for (const id of ['start', 'langs', 'legend', 'crosshair', 'menuBtn', 'lookhint', 'objective', 'prompt']) { const e = $(id); if (e) e.style.display = 'none'; }
   reset(); await corridorReady; playing = false;
   const ov = document.createElement('div');
@@ -859,7 +880,7 @@ async function runDemo() {
   await dolly({ x: -0.46, y: 1.72, z: 1.48 }, { x: -0.3, y: 1.68, z: 1.42 }, { x: 2.2, y: 1.4, z: -0.58 }, { x: 2.2, y: 1.42, z: -0.58 }, 1500);
   bossS.rate = 6; anim(boss, 'phone', false); await wait(1250); stop(S.ring); boss.playbackSpeed = 0.62;
   play(S.call); caption('call1', 1700); await wait(2200); caption('call2', 1300); await wait(1500);
-  boss.playbackSpeed = 1; bossS.rate = 9; anim(boss, 'send', false); S.call.pause(); play(S.order); caption('order', 2800);
+  boss.playbackSpeed = 1; bossS.rate = 9; anim(boss, 'send', false); S.call.pause(); play(S.order); caption('order', 2800); carry.bag = true;
   await dolly({ x: -0.3, y: 1.68, z: 1.42 }, { x: -0.08, y: 1.62, z: 1.33 }, { x: 2.2, y: 1.42, z: -0.58 }, { x: 2.2, y: 1.45, z: -0.58 }, 3000);
 
   // 0:16 the corridor: walking to the green door, the mahjong getting louder
@@ -870,7 +891,7 @@ async function runDemo() {
       rail.on = true; rail.p = { x: 0.28, y: 1.78, z: z + 1.55 }; rail.l = { x: -0.05, y: 1.25, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
       if (k >= 1) break; await wait(16); } }
   // 0:22 the knock. The room goes quiet.
-  faiAt(co.knockStand.x, co.knockStand.z, 180); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
+  faiAt(co.knockStand.x, co.knockStand.z, 180); dropBag(); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
   cam({ x: 0.42, y: 1.55, z: -1.75 }, { x: -0.28, y: 1.15, z: -3.5 });
   await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
@@ -891,12 +912,20 @@ async function runDemo() {
   await dolly({ x: 0.15, y: 1.56, z: -0.1 }, { x: 0.42, y: 1.52, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }, { x: 2.25, y: 1.4, z: -0.1 }, 3000);
   bossS.rate = 9; anim(boss, 'note', false, 0.5); await wait(1700);
   play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
-  await wait(2700); black(1); S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
+  await wait(1900);
+  // half a second of the note's corner: red and green print, no face
+  { $('still').style.transition = 'none'; $('still').src = A('reveal-note.jpg'); $('still').style.transform = 'scale(3.1) translate(27%, 21%)'; $('still').style.opacity = 1; await wait(450); $('still').style.opacity = 0; }
+  await wait(250); black(1); bagAt = null; carry.bag = false; S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
 
   // 0:42 cards
   await wait(500);
   await over(`<div style="font-family:var(--sans);font-size:clamp(14px,1.7vw,20px);letter-spacing:.14em;color:var(--dim);margin-bottom:12px">${lang === 'en' ? 'Characters, motion and both scenes made with' : '角色、動作同場景全部用'}</div><div style="font-weight:900;font-size:clamp(34px,5vw,64px);letter-spacing:.1em">PINOC <span style="font-weight:500;font-size:.5em;letter-spacing:.2em">by Viggle</span></div>`, 2600);
-  await over(`<div style="font-weight:900;font-size:clamp(28px,4vw,52px);letter-spacing:.14em">${lang === 'en' ? 'Night 1 · play free in your browser' : '第一晚 · 瀏覽器免費玩'}</div><div style="font-family:var(--sans);font-size:clamp(14px,1.8vw,22px);letter-spacing:.08em;color:var(--ink);margin-top:16px">howardhwt.github.io/closing-time</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.3em;color:var(--dim);margin-top:22px">${t('n2')}</div>`, 3200);
+  await over(`<div style="font-weight:900;font-size:clamp(28px,4vw,52px);letter-spacing:.14em">${lang === 'en' ? 'Night 1 · play free in your browser' : '第一晚 · 瀏覽器免費玩'}</div><div style="font-family:var(--sans);font-size:clamp(14px,1.8vw,22px);letter-spacing:.08em;color:var(--ink);margin-top:16px">howardhwt.github.io/closing-time</div>`, 2800);
+  // Night 2, the way the game ends: the phone on the counter, and it rings again
+  { const el = $('still'); el.style.transition = 'opacity 700ms ease'; el.style.transform = 'scale(1.02)'; el.src = A('frame-phone.jpg'); el.style.opacity = 1; }
+  await wait(600); S.ring.volume = 0.7; play(S.ring);
+  ov.innerHTML = `<div style="position:absolute;bottom:12%;left:0;right:0;font-weight:900;font-size:clamp(24px,3.4vw,44px);letter-spacing:.2em;text-shadow:0 2px 12px #000">${lang === 'en' ? 'Night 2 · the phone rings again' : lang === 'zh-CN' ? '第二晚 · 电话又响' : '第二晚 · 電話又響'}</div>`; ov.style.opacity = 1;
+  await wait(2300); stop(S.ring); await wait(500); ov.style.opacity = 0; $('still').style.opacity = 0; await wait(700);
   if (stopRec) { await wait(400); await stopRec(); }
   window.__demoDone = true;
 }
