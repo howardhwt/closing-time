@@ -59,11 +59,25 @@
   #actBtn.on { opacity:1; border-color:var(--ink); }
   #lookhint { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); font-size:12px; color:var(--dim); letter-spacing:.12em; opacity:0; transition:opacity .4s; pointer-events:none; }
   #toast { position:fixed; left:50%; top:46%; transform:translate(-50%,-50%); font-size:13px; color:var(--dim); letter-spacing:.1em; opacity:0; transition:opacity .4s; pointer-events:none; }
+  #menu { display:none; z-index:6; background:rgba(0,0,0,.78); }
+  #menu .panel { min-width:min(420px,88vw); text-align:left; }
+  #menu h2 { font-family:var(--serif); font-weight:900; font-size:34px; letter-spacing:.3em; text-align:center; margin-bottom:26px; }
+  #menu .row { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:12px 0; font-size:14px; letter-spacing:.08em; }
+  #menu input[type=range] { width:190px; accent-color:#e8e2d4; }
+  #menu .btns { display:flex; flex-direction:column; gap:10px; margin-top:24px; }
+  #menu .btns button { margin:0; width:100%; }
+  #menu .legendlist { margin-top:22px; font-size:12px; color:var(--dim); line-height:2; letter-spacing:.08em; }
+  #legend { position:fixed; left:18px; bottom:16px; font-size:12px; line-height:1.9; color:rgba(232,226,212,.62); letter-spacing:.08em; text-shadow:0 1px 4px #000; pointer-events:none; opacity:0; transition:opacity .4s; }
+  #legend b { display:inline-block; min-width:22px; padding:0 5px; margin-right:6px; border:1px solid rgba(232,226,212,.35); text-align:center; font-weight:500; color:var(--ink); }
+  #inv { position:fixed; left:18px; top:18px; display:flex; align-items:center; gap:10px; font-size:13px; letter-spacing:.1em; opacity:0; transition:opacity .5s; pointer-events:none; text-shadow:0 1px 4px #000; }
+  #inv img { width:44px; height:18px; object-fit:cover; border:1px solid rgba(232,226,212,.3); filter:brightness(.8); }
+  #menuBtn { display:none; position:fixed; top:18px; right:150px; z-index:5; font:inherit; font-size:12px; letter-spacing:.12em; color:var(--ink); background:rgba(0,0,0,.35); border:1px solid rgba(232,226,212,.3); padding:6px 11px; cursor:pointer; }
+  html.touch #legend { display:none; }
   .touchonly { display:none; }
   html.touch .touchonly { display:block; }
   html.touch .desk { display:none; }
 </style>
-  <script type="module" crossorigin src="./assets/main-BTcVpMjf.js"></script>
+  <script type="module" crossorigin src="./assets/main-BCzhEf8a.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/index-BMj2ErFP.js">
 </head>
 <body>
@@ -85,6 +99,20 @@
 <div id="caption"></div>
 <div id="touch"><button id="walkBtn" data-t="walk">行</button><button id="viewBtn" data-t="view">視角</button><button id="actBtn" data-t="act">互動</button></div>
 
+<div id="inv"><img src="assets/prop-note.jpg" alt=""><span data-t="inv"></span></div>
+<div id="legend"><div><b>W A S D</b><span data-t="lg_move"></span></div><div><b>⟲</b><span data-t="lg_look"></span></div><div><b>E</b><span data-t="lg_act"></span></div><div><b>V</b><span data-t="lg_view"></span></div><div><b>Esc</b><span data-t="lg_menu"></span></div><div><b>H</b><span data-t="lg_hide"></span></div></div>
+<button id="menuBtn" data-t="m_btn">選單</button>
+<div id="menu" class="card"><div class="panel">
+  <h2 data-t="m_title">暫停</h2>
+  <div class="row"><span data-t="m_master"></span><input id="v_master" type="range" min="0" max="100"></div>
+  <div class="row"><span data-t="m_music"></span><input id="v_music" type="range" min="0" max="100"></div>
+  <div class="row"><span data-t="m_sfx"></span><input id="v_sfx" type="range" min="0" max="100"></div>
+  <div class="row"><span data-t="m_voice"></span><input id="v_voice" type="range" min="0" max="100"></div>
+  <div class="row"><span data-t="m_sens"></span><input id="v_sens" type="range" min="30" max="250"></div>
+  <div class="row"><span data-t="m_legend"></span><input id="legendChk" type="checkbox"></div>
+  <div class="btns"><button id="m_resume" class="main" data-t="m_resume"></button><button id="m_view" class="main" data-t="m_view"></button><button id="m_restart" class="main" data-t="m_restart"></button></div>
+  <div class="legendlist desk" data-t="keys"></div>
+</div></div>
 <div class="langs" id="langs" role="radiogroup" aria-label="Language"></div>
 
 <div id="start" class="card">
