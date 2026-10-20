@@ -482,7 +482,11 @@ scene.app.on('update', () => {
       player.bob += speed * dt * 5.2;
       const bob = Math.sin(player.bob) * 0.012 * Math.min(1, speed / SPEED.fwd);
       const rch = player.reach;
-      const ex = player.x + f.x * (rch - 0.16 + 0.12), ez = player.z + f.z * (rch - 0.16 + 0.12), ey = camS.eye + bob;
+      let ex = player.x + f.x * (rch - 0.16 + 0.12), ez = player.z + f.z * (rch - 0.16 + 0.12); const ey = camS.eye + bob;
+      if (player.act === 'startle' && h) {   // ride his head while the clip walks him back, keeping the offset it started with
+        if (!camS.ride) camS.ride = { dx: ex - h.x, dz: ez - h.z };
+        ex = h.x + camS.ride.dx; ez = h.z + camS.ride.dz;
+      } else camS.ride = null;
       camS.init = true; camS.x = ex; camS.y = ey; camS.z = ez;
       cam.setPosition(ex, ey, ez);
       cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
@@ -564,11 +568,17 @@ async function interact() {
     // the door jerks open a crack onto black; he hops back from it, frightened, eyes still on the gap
     play(S.door); caption('s_crack', 2600); openCrack(0.13, 380);
     await wait(120);
-    const hop = ANIMS.has('startle') ? 'startle' : null;
-    if (hop) { player.act = 'startle'; anim(fai, 'startle', false, 0.08); }
-    else player.act = 'step';                            // fallback: the old backward walk
-    turnTo(-6, -50, 900); await walkTo(co.watchStand.x, co.watchStand.z, hop ? 1.7 : 0.9);
-    await wait(hop ? 900 : 200); player.act = null; if (hop) anim(fai, 'idle', true, 0.5);
+    if (ANIMS.has('startle')) {
+      // the clip carries its own two steps back (off4, about 0.55 m): the body moves, the camera rides his head,
+      // and when it ends the player is moved to where his feet landed
+      const p0 = bonePos(PELVIS)?.clone(); player.act = 'startle'; anim(fai, 'startle', false, 0.06); fai.playbackSpeed = 1;
+      turnTo(-6, -50, 1400); await wait(3900);
+      const p1 = bonePos(PELVIS);
+      if (p0 && p1) { player.x += p1.x - p0.x; player.z += p1.z - p0.z; }
+      anim(fai, 'idle', true, 0.0); player.act = null;
+    } else {
+      player.act = 'step'; turnTo(-6, -50, 900); await walkTo(co.watchStand.x, co.watchStand.z, 0.9); await wait(200); player.act = null;
+    }
     caption('s_notes', 2400); play(S.money); await slideNotes();
     await wait(600);
     state = 'money'; frozen = false; objective(null);
