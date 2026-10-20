@@ -58,7 +58,7 @@ if (Q.get('layout')) { try { const o = JSON.parse(Q.get('layout')); for (const k
 // ---------------------------------------------------------------------------
 // Language
 // ---------------------------------------------------------------------------
-let lang = detectLang();
+let lang = LANGS.includes(Q.get('lang')) ? Q.get('lang') : detectLang();
 const t = (k) => T[lang][k] ?? T.en[k] ?? k;
 let curObjective = null;
 function applyLang() {
@@ -781,12 +781,92 @@ $('m_title').addEventListener('click', () => {   // back to the title card: stop
 });
 $('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); if (menuOpen) closeMenu(); else openMenu(); });
 
+
+// ---------------------------------------------------------------------------
+// ?demo: a scripted ~47 s cut for the launch video (screen recording). Cameras on rails, no input.
+// ---------------------------------------------------------------------------
+async function runDemo() {
+  initAudio(); if (actx && actx.state === 'suspended') await actx.resume();
+  for (const id of ['start', 'langs', 'legend', 'crosshair', 'menuBtn', 'lookhint', 'objective', 'prompt']) { const e = $(id); if (e) e.style.display = 'none'; }
+  reset(); await corridorReady; playing = false;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;opacity:0;transition:opacity .5s;z-index:4;font-family:var(--serif);padding:24px';
+  document.body.appendChild(ov);
+  const over = async (html, ms) => { ov.innerHTML = html; ov.style.opacity = 1; await wait(ms); ov.style.opacity = 0; await wait(500); };
+  const scene = (k) => { envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); envs[k].setTint(L[k].tint, DARK); };
+  const cam = (p, l) => { rail.on = true; rail.p = p; rail.l = l; };
+  const dolly = async (a, b, la, lb, ms, each) => { rail.on = true; const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k);
+    rail.p = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, z: a.z + (b.z - a.z) * e }; rail.l = { x: la.x + (lb.x - la.x) * e, y: la.y + (lb.y - la.y) * e, z: la.z + (lb.z - la.z) * e };
+    if (each) each(k); if (k >= 1) break; await wait(16); } };
+  const faiAt = (x, z, yaw) => { fai.setActive(!NOBODY); fai.setPosition(x, 0.08, z); fai.setRotation(0, yaw, 0); player.x = x; player.z = z; };
+  const d = co.door;
+
+  // 0:00 cold open: low at the green door. The mahjong, then nothing, then the door gives and money comes out.
+  scene('corridor'); fai.setActive(false); black(1);
+  cam({ x: 0.22, y: 0.42, z: -2.45 }, { x: -0.1, y: 0.18, z: -3.7 });
+  mahjongNear(0.8); play(S.mahjong, 4); await wait(300); black(0);
+  await wait(1500); mahjongStop(); await wait(700);
+  play(S.door); openCrack(0.13, 380); await wait(450); play(S.money); slideNotes(); await wait(1700);
+  // 0:04 title
+  black(1); await over(`<div class="seal" style="display:inline-block;border:2px solid var(--red);color:var(--red);font-weight:900;padding:4px 8px;font-size:14px;letter-spacing:.2em;margin-bottom:18px;transform:rotate(-3deg)">地府通用</div><div style="font-weight:900;font-size:clamp(56px,9vw,110px);letter-spacing:.12em;line-height:1">收舖</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.5em;color:var(--dim);margin-top:14px">CLOSING TIME · ${t('epTitle')}</div>`, 2300);
+  notes.enabled = false; openCrack(0, 10); crack.__w = 0;
+
+  // 0:07 the shop, the phone, 祥哥 answers
+  scene('shop'); placeBoss(sh.bossPhone); anim(boss, 'count', true);
+  faiAt(0.45, 0.45, 119); anim(fai, 'idle', true);
+  cam({ x: -0.62, y: 1.7, z: 1.25 }, { x: 2.1, y: 1.25, z: -0.55 });
+  S.ring.volume = 0.6; play(S.ring); black(0); caption('s_ring', 1500);
+  await dolly({ x: -0.62, y: 1.7, z: 1.25 }, { x: -0.25, y: 1.62, z: 0.95 }, { x: 2.1, y: 1.25, z: -0.55 }, { x: 2.1, y: 1.3, z: -0.55 }, 1500);
+  bossS.rate = 6; anim(boss, 'phone', false); await wait(1250); stop(S.ring); boss.playbackSpeed = 0.62;
+  play(S.call); caption('call1', 1700); await wait(2200); caption('call2', 1300); await wait(1500);
+  boss.playbackSpeed = 1; bossS.rate = 9; anim(boss, 'send', false); S.call.pause(); play(S.order); caption('order', 2800);
+  await dolly({ x: -0.25, y: 1.62, z: 0.95 }, { x: 0.05, y: 1.58, z: 0.75 }, { x: 2.1, y: 1.3, z: -0.55 }, { x: 2.15, y: 1.35, z: -0.58 }, 3000);
+
+  // 0:16 the corridor: walking to the green door, the mahjong getting louder
+  black(1); await wait(250); scene('corridor'); anim(fai, 'walk', true); faiAt(0, 3.2, 180);
+  mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400);
+  { const t0 = performance.now(), z0 = 3.2, z1 = -2.5, ms = 5600;
+    for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), z = z0 + (z1 - z0) * k; faiAt(0.02, z, 180); fai.playbackSpeed = 0.9;
+      rail.on = true; rail.p = { x: 0.28, y: 1.78, z: z + 1.55 }; rail.l = { x: -0.05, y: 1.25, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
+      if (k >= 1) break; await wait(16); } }
+  // 0:22 the knock. The room goes quiet.
+  faiAt(co.knockStand.x, co.knockStand.z, 180); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
+  cam({ x: 0.42, y: 1.55, z: -1.75 }, { x: -0.28, y: 1.15, z: -3.5 });
+  await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
+  play(S.takeaway); caption('takeaway', 1600); await wait(1900);
+  // 0:27 the door jerks open; he backs off; the money slides out to his feet
+  play(S.door); caption('s_crack', 2400); openCrack(0.13, 380); await wait(120);
+  anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
+    for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
+      const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u; faiAt(x0, z0 - lz, 180);   // facing -z: local back is world +z
+      if ((performance.now() - t0) > 2600) break; await wait(16); } }
+  play(S.money); slideNotes(); await dolly({ x: 0.42, y: 1.55, z: -1.75 }, { x: 0.3, y: 1.7, z: -1.45 }, { x: -0.28, y: 1.0, z: -3.5 }, { x: -0.15, y: 0.15, z: -3.0 }, 2000);
+  await wait(500);
+
+  // 0:33 back at the till, later. He counts. He stops.
+  black(1); notes.enabled = false; openCrack(0, 10); crack.__w = 0; await wait(300);
+  scene('shop'); placeBoss(sh.boss); anim(boss, 'count', true); fai.setActive(false); player.x = 0.15; player.z = -0.1;
+  cam({ x: 0.15, y: 1.56, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }); card('later', true); await wait(1300); card(null, false); black(0);
+  caption('s_count', 1800);
+  await dolly({ x: 0.15, y: 1.56, z: -0.1 }, { x: 0.42, y: 1.52, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }, { x: 2.25, y: 1.4, z: -0.1 }, 3000);
+  bossS.rate = 9; anim(boss, 'note', false, 0.5); await wait(1700);
+  play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
+  await wait(2700); black(1); S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
+
+  // 0:42 cards
+  await wait(500);
+  await over(`<div style="font-family:var(--sans);font-size:clamp(14px,1.7vw,20px);letter-spacing:.14em;color:var(--dim);margin-bottom:12px">${lang === 'en' ? 'Characters, motion and both scenes made with' : '角色、動作同場景全部用'}</div><div style="font-weight:900;font-size:clamp(34px,5vw,64px);letter-spacing:.1em">PINOC <span style="font-weight:500;font-size:.5em;letter-spacing:.2em">by Viggle</span></div>`, 2600);
+  await over(`<div style="font-weight:900;font-size:clamp(28px,4vw,52px);letter-spacing:.14em">${lang === 'en' ? 'Night 1 · play free in your browser' : '第一晚 · 瀏覽器免費玩'}</div><div style="font-family:var(--sans);font-size:clamp(14px,1.8vw,22px);letter-spacing:.08em;color:var(--ink);margin-top:16px">howardhwt.github.io/closing-time</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.3em;color:var(--dim);margin-top:22px">${t('n2')}</div>`, 3200);
+  window.__demoDone = true;
+}
+
 reset();
 const go = $('go');
 go.disabled = false; applyLang();
 go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
+if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', (e) => { e.stopImmediatePropagation(); runDemo(); }, { capture: true }); }
 window.__ready = true;
 window.__debug = { bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
