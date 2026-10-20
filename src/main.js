@@ -776,7 +776,7 @@ $('m_view').addEventListener('click', () => toggleView());
 $('m_restart').addEventListener('click', () => { closeMenu(); begin(); });
 $('m_title').addEventListener('click', () => {   // back to the title card: stop the night, keep the settings
   closeMenu(); playing = false; reset(); $('legend').style.opacity = 0; $('menuBtn').style.display = 'none'; $('crosshair').style.opacity = 0;
-  objective(null); prompt(null); caption   $('objective').style.opacity = 0; $('lookhint').style.opacity = 0; if (locked)  $('objective').style.opacity = 0; $('lookhint').style.opacity = 0; if (locked) ($('caption').style.opacity = 0); $('lookhint').style.opacity = 0; if (locked) { lockWanted = true; document.exitPointerLock?.(); }
+  objective(null); prompt(null); $('caption').style.opacity = 0; $('lookhint').style.opacity = 0; if (locked) { lockWanted = true; document.exitPointerLock?.(); }
   $('start').style.display = 'flex'; $('langs').style.display = 'flex';
 });
 $('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); if (menuOpen) closeMenu(); else openMenu(); });
