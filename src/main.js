@@ -182,7 +182,7 @@ envs.shop = await loadEnv('shop', (k) => (bar.style.width = (k * 70).toFixed(1) 
 
 await Animation.loadGlb(scene, A('idle.glb'), 'idle');
 const ANIMS = new Set(['idle']);
-await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'walk2', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
+await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'startle', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
   Animation.loadGlb(scene, A(`m-${n}.glb`), n).then(() => ANIMS.add(n)).catch(() => {})));
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
@@ -451,7 +451,7 @@ scene.app.on('update', () => {
     if (!player.act) {
       if (!moving) { anim(fai, 'idle', true, 0.3); fai.playbackSpeed = 1; }
       else if (move.lx < -0.1) { anim(fai, 'walkback', true, 0.25); fai.playbackSpeed = Math.max(0.5, Math.min(1.3, -move.lx / SPEED.back)); }
-      else { const w = state === 'walkback' && ANIMS.has('walk2') ? 'walk2' : 'walk'; anim(fai, w, true, 0.25); fai.playbackSpeed = Math.max(0.45, Math.min(1.3, speed / 1.45)); }
+      else { anim(fai, 'walk', true, 0.25); fai.playbackSpeed = Math.max(0.45, Math.min(1.3, speed / 1.45)); }
     }
   }
 
@@ -503,7 +503,7 @@ let flick = 3, stepsTail = 0;
 function tick(dt) {
   if (state === 'look') {
     // closing time: a last look round before the phone goes
-    beats.lookT += dt; beats.walked += Math.hypot(player.x - beats.lx, player.z - beats.lz); beats.lx = player.x; beats.lz = player.z;
+    beats.lookT = (performance.now() - beats.t0) / 1000; beats.walked += Math.hypot(player.x - beats.lx, player.z - beats.lz); beats.lx = player.x; beats.lz = player.z;
     if ((beats.walked > 4 && beats.lookT > 8) || beats.lookT > 30) startRing();
   } else if (state === 'ring') {
     S.ring.volume = Math.max(0.15, Math.min(1, 1.8 / (dist(sh.till) + 0.6)));
@@ -561,10 +561,14 @@ async function interact() {
     await wait(1400); play(S.takeaway); caption('takeaway', 1800);
     await wait(2800);
     caption('silence', 1800); fade(S.drone, 0.12, 900); await wait(2600);
-    // he steps back; the door opens a crack onto black, and the notes slide out to his feet
-    player.act = 'step'; await walkTo(co.watchStand.x, co.watchStand.z, 0.5); player.act = null;
-    await turnTo(-6, -50, 700);
-    play(S.door); caption('s_crack', 2600); await openCrack(0.13, 2600);
+    // the door jerks open a crack onto black; he hops back from it, frightened, eyes still on the gap
+    play(S.door); caption('s_crack', 2600); openCrack(0.13, 380);
+    await wait(120);
+    const hop = ANIMS.has('startle') ? 'startle' : null;
+    if (hop) { player.act = 'startle'; anim(fai, 'startle', false, 0.08); }
+    else player.act = 'step';                            // fallback: the old backward walk
+    turnTo(-6, -50, 900); await walkTo(co.watchStand.x, co.watchStand.z, hop ? 1.7 : 0.9);
+    await wait(hop ? 900 : 200); player.act = null; if (hop) anim(fai, 'idle', true, 0.5);
     caption('s_notes', 2400); play(S.money); await slideNotes();
     await wait(600);
     state = 'money'; frozen = false; objective(null);
@@ -696,7 +700,7 @@ async function begin() {
   await frameStart();
   frozen = false;
   placeBoss(sh.bossPhone);
-  beats.lx = player.x; beats.lz = player.z; state = 'look'; objective('o_look');
+  beats.lx = player.x; beats.lz = player.z; beats.t0 = performance.now(); state = 'look'; objective('o_look');
 }
 function startRing() {
   if (state !== 'look') return;
