@@ -188,6 +188,7 @@ await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'startle', 'walkbac
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
   if (ch.currentAnimationName === n && loop) return;
+  ch.__snap = Math.ceil(fadeS * 60) + 4;   // a new clip: the steering follows its body turn frame by frame through the crossfade
   try { ch.crossfadeTo(n, { duration: fadeS, loop: n === 'idle' ? true : loop }); } catch { ch.playAnimation(n, { loop }); }
 }
 const boss = await Character.load(scene, A('xiangge.vsplat'));
@@ -217,7 +218,7 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
   bag.addChild(m);
 });
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
-new Image().src = A('reveal-note.jpg');   // preload the reveal so it cuts in instantly
+new Image().src = A('reveal-note.jpg'); new Image().src = A('glimpse-note.jpg');   // preload the reveal so it cuts in instantly
 // until the note at the till, it is just money: the 1989 HSBC $100 (reference scan, downscaled and softened)
 scene.app.assets.loadFromUrl(A('prop-cash.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
 function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.158, 0.0015, 0.079); e.enabled = false; scene.app.root.addChild(e); return e; }
@@ -231,8 +232,8 @@ const notes = { set enabled(v) { notesShown = v; } };
 // props draw over the splats with no depth test, so anything behind 阿輝's body would paint over him: hide it instead
 function behindBody(p) {
   const c = cam.getPosition(), bx = player.x, bz = player.z; const cx = bx - c.x, cz = bz - c.z, px = p.x - c.x, pz = p.z - c.z;
-  const d = Math.hypot(cx, cz) || 1, along = (px * cx + pz * cz) / d; if (along < d - 0.1) return false;   // in front of him
-  return Math.abs(px * cz - pz * cx) / d < 0.38;                                                          // inside his silhouette
+  const d = Math.hypot(cx, cz) || 1, along = (px * cx + pz * cz) / d; if (along < d + 0.08) return false;   // in front of him or at his side
+  return Math.abs(px * cz - pz * cx) / d < 0.3;                                                          // inside his silhouette
 }
 const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n));
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
@@ -448,13 +449,28 @@ function bossChestYaw() {
   const vx = bossV.r.x - bossV.l.x, vz = bossV.r.z - bossV.l.z;   // left shoulder to right shoulder
   return Math.atan2(vz, -vx) * 180 / Math.PI;                      // forward = up x (R - L)
 }
+// 阿輝 too: clips carry their own body turn (the knock starts turned away), so steer by his hips toward where he should face.
+// On a new clip the correction snaps in one frame (a pose cut) instead of letting him spin round.
+let faiWant = 180, faiFix = 0;
+const FB = (n) => fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n);
+const F_TL = FB('thigh_l'), F_TR = FB('thigh_r');
+function faiHipYaw() { if (F_TL < 0 || F_TR < 0) return null; const ml = fai.armature.getBoneWorldMatrix(F_TL), mr = fai.armature.getBoneWorldMatrix(F_TR); if (!ml || !mr) return null;
+  const l = ml.getTranslation(new Vec3()), r = mr.getTranslation(new Vec3()); return Math.atan2(r.z - l.z, -(r.x - l.x)) * 180 / Math.PI; }
+function steerFai(dt) {
+  if (NOBODY) return; const hip = faiHipYaw();
+  if (hip !== null) { const cur = faiWant + faiFix, body = ((hip - cur + 540) % 360) - 180;   // how far the clip has turned him from his entity
+    const want = ((faiWant - body - (faiWant + faiFix) + 540) % 360) - 180;                      // fix needed so his hips face faiWant
+    if (fai.__snap > 0) { faiFix += want; fai.__snap--; } else faiFix += Math.max(-2, Math.min(2, want * (1 - Math.exp(-3 * dt))));
+    faiFix = ((faiFix + 540) % 360) - 180; if (Math.abs(faiFix) > 120) faiFix = Math.sign(faiFix) * 120; }
+  fai.setRotation(0, faiWant + faiFix, 0);
+}
 function updateBoss(dt) {
   if (player.scene !== 'shop' || !envs.shop.entity.enabled) return;
   const want = Math.atan2(player.x - bossS.x, player.z - bossS.z) * 180 / Math.PI;   // a character at yaw 0 faces +z
   const lim = Math.max(-170, Math.min(-10, ((want + 540) % 360) - 180));
   const chest = bossChestYaw();
   const err = chest === null ? ((lim - bossS.yaw + 540) % 360) - 180 : ((lim - chest + 540) % 360) - 180;
-  bossS.yaw += Math.max(-4, Math.min(4, err * (1 - Math.exp(-bossS.rate * dt))));   // at most 4 degrees a frame: he turns, never spins
+  if (boss.__snap > 0) { bossS.yaw += err; boss.__snap--; } else bossS.yaw += Math.max(-4, Math.min(4, err * (1 - Math.exp(-bossS.rate * dt))));   // at most 4 degrees a frame: he turns, never spins
   const off = ((bossS.yaw - lim + 540) % 360) - 180; if (Math.abs(off) > 70) bossS.yaw = lim + Math.sign(off) * 70;
   boss.setRotation(0, bossS.yaw, 0);
 }
@@ -506,7 +522,7 @@ scene.app.on('update', () => {
     if (moving && move.lx > -0.1) face = player.yaw - Math.atan2(move.lz, Math.max(0.2, move.lx)) * 180 / Math.PI * 0.8;
     camS.bodyYaw = camS.init ? angDamp(camS.bodyYaw, face, 12, dt) : face;
     const off = view === 'third' ? 0 : 0.16; fai.setPosition(player.x - f.x * off, 0.08, player.z - f.z * off);
-    fai.setRotation(0, camS.bodyYaw + 180, 0);
+    faiWant = camS.bodyYaw + 180;
     if (!player.act) {
       if (!moving) { anim(fai, 'idle', true, 0.3); fai.playbackSpeed = 1; }
       else if (move.lx < -0.1) { anim(fai, 'walkback', true, 0.25); fai.playbackSpeed = Math.max(0.5, Math.min(1.3, -move.lx / SPEED.back)); }
@@ -550,7 +566,7 @@ scene.app.on('update', () => {
     }
   }
   if (jolt.a > 0.0005) { const p = cam.getPosition(); cam.setPosition(p.x + (Math.random() - 0.5) * jolt.a, p.y + (Math.random() - 0.5) * jolt.a, p.z + (Math.random() - 0.5) * jolt.a); jolt.a *= Math.exp(-dt * 7); } else jolt.a = 0;
-  updateBoss(dt); updatePool(); updateProps();
+  steerFai(dt); updateBoss(dt); updatePool(); updateProps();
   if (DEV) $('objective').textContent = `${player.scene} x ${player.x.toFixed(2)} z ${player.z.toFixed(2)} yaw ${((player.yaw % 360) + 360) % 360 | 0} ${state}`;
 });
 
@@ -855,7 +871,7 @@ async function runDemo() {
   const dolly = async (a, b, la, lb, ms, each) => { rail.on = true; const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k);
     rail.p = { x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, z: a.z + (b.z - a.z) * e }; rail.l = { x: la.x + (lb.x - la.x) * e, y: la.y + (lb.y - la.y) * e, z: la.z + (lb.z - la.z) * e };
     if (each) each(k); if (k >= 1) break; await wait(16); } };
-  const faiAt = (x, z, yaw) => { fai.setActive(!NOBODY); fai.setPosition(x, 0.08, z); fai.setRotation(0, yaw, 0); player.x = x; player.z = z; };
+  const faiAt = (x, z, yaw) => { fai.setActive(!NOBODY); fai.setPosition(x, 0.08, z); faiWant = yaw; player.x = x; player.z = z; };
   const d = co.door;
 
   // 0:00 cold open: standing at the green door. Mahjong behind it rises out of silence, stops; the door gives; money comes out.
@@ -888,7 +904,7 @@ async function runDemo() {
   mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400);
   { const t0 = performance.now(), z0 = 3.2, z1 = -2.5, ms = 5600;
     for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), z = z0 + (z1 - z0) * k; faiAt(0.02, z, 180); fai.playbackSpeed = 0.9;
-      rail.on = true; rail.p = { x: 0.28, y: 1.78, z: z + 1.55 }; rail.l = { x: -0.05, y: 1.25, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
+      rail.on = true; rail.p = { x: -0.3, y: 1.7, z: z + 1.5 }; rail.l = { x: 0.05, y: 1.2, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
       if (k >= 1) break; await wait(16); } }
   // 0:22 the knock. The room goes quiet.
   faiAt(co.knockStand.x, co.knockStand.z, 180); dropBag(); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
@@ -914,7 +930,7 @@ async function runDemo() {
   play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
   await wait(1900);
   // half a second of the note's corner: red and green print, no face
-  { $('still').style.transition = 'none'; $('still').src = A('reveal-note.jpg'); $('still').style.transform = 'scale(3.1) translate(27%, 21%)'; $('still').style.opacity = 1; await wait(450); $('still').style.opacity = 0; }
+  { const el = $('still'); el.style.transition = 'none'; el.src = A('glimpse-note.jpg'); el.style.transform = 'scale(1.02)'; el.style.opacity = 1; await wait(600); el.style.opacity = 0; }
   await wait(250); black(1); bagAt = null; carry.bag = false; S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
 
   // 0:42 cards
