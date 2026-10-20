@@ -217,6 +217,7 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
   bag.addChild(m);
 });
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
+new Image().src = A('reveal-note.jpg');   // preload the reveal so it cuts in instantly
 // until the note at the till, it is just money: a plain, generic banknote (no real currency, no hell-note print)
 { const c = document.createElement('canvas'); c.width = 256; c.height = 100; const g = c.getContext('2d');
   g.fillStyle = '#9c4a3a'; g.fillRect(0, 0, 256, 100); g.strokeStyle = '#5e2a20'; g.lineWidth = 6; g.strokeRect(6, 6, 244, 88);
@@ -628,7 +629,7 @@ async function interact() {
     frozen = false; state = 'walkback'; objective('o_back');
   } else if (k === 'p_hand') {
     state = 'handover'; objective(null); frozen = true;
-    await turnTo(Math.atan2(-(sh.handStand.x - player.x), -(sh.handStand.z - player.z)) * 180 / Math.PI, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -12, 400);
+    // from wherever you stand at the counter: no walking you into place
     carry.pocket = false; carry.notes = true;            // out of the pocket, onto the counter
     act('handover', 2400); await wait(1300); carry.notes = false; play(S.money);
     caption('s_till', 2600); anim(boss, 'count', true);
@@ -644,15 +645,16 @@ async function interact() {
     anim(boss, 'idle', true, 0.5); bossS.rate = 6; state = 'bosscall'; objective('o_boss');
   } else if (k === 'p_boss') {
     state = 'note'; objective(null); frozen = true;
-    await turnTo(Math.atan2(-(sh.handStand.x - player.x), -(sh.handStand.z - player.z)) * 180 / Math.PI, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -10, 400);
     // he holds one note out to you
     bossS.rate = 9; anim(boss, 'note', false, 0.5);
     await wait(2400);
-    $('note').classList.add('show');
+    // the reveal: his hands, the note held up to you. It is one of the four you picked up.
+    black(1); await wait(160);
+    const done = await still('reveal-note.jpg', 5200, 1.0, 1.06); black(0);
     await wait(900);
     play(S.who, 2.4); setTimeout(() => caption('who', 2800), 350);
-    await wait(3200);
-    $('note').classList.remove('show'); black(1); fade(S.drone, 0, 600);
+    await wait(3600);
+    black(1); done(); fade(S.drone, 0, 600);
     await wait(1600);
     await frameEnd();
   } else if (k === 'p_stairs') {
