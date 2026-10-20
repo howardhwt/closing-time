@@ -673,7 +673,7 @@ async function toCorridor() {
   if (!envs.corridor) { $('toast').textContent = t('loadingCorridor'); $('toast').style.opacity = 1; await corridorReady; $('toast').style.opacity = 0; }
   envs.shop.entity.enabled = false; envs.corridor.entity.enabled = true; boss.setActive(false);
   setPlayer(co.spawn, 'corridor');
-  mahjongNear(dist(co.door)); play(S.mahjong, Math.random() * 25);   // a different stretch of the loop each run
+  mahjongNear(dist(co.door)); play(S.mahjong, Math.random() * 10);   // a different point in the loop each run
   await wait(500); fadeOut(0); frozen = false; fade(S.drone, 0.22, 3000);
   setTimeout(() => caption('s_mahjong', 2600), 1600);
   state = 'door'; objective('o_door');
