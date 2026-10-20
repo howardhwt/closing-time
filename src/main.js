@@ -247,7 +247,7 @@ function updateProps() {
     const p = view === 'third' ? handAt(HAND_R) : heldAt(0.17, 0.26, 0.45);
     if (p) { handNotes.enabled = true; handNotes.setPosition(p.x, p.y, p.z); handNotes.setEulerAngles(view === 'third' ? 0 : 55, camS.bodyYaw + 180, 0); } else handNotes.enabled = false;
   } else handNotes.enabled = false;
-  const showPocket = carry.pocket && !carry.notes && view === 'third' && !rail.on && !NOBODY;
+  const showPocket = false;   // the pocket corner read badly on screen: the notes live in the inventory chip instead
   pocketNote.enabled = showPocket;
   if (showPocket) { const pv = bonePos(PELVIS); if (pv) { const b = camS.bodyYaw * Math.PI / 180, fx = -Math.sin(b), fz = -Math.cos(b), rx = -fz, rz = fx;
     pocketNote.setPosition(pv.x - fx * 0.12 + rx * 0.09, pv.y - 0.05, pv.z - fz * 0.12 + rz * 0.09); pocketNote.setEulerAngles(0, camS.bodyYaw + 180, 9); } }
@@ -320,7 +320,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());             // no stuck keys after alt-tab
 let lockWanted = false;
-document.addEventListener('pointerlockchange', () => { const was = locked; locked = document.pointerLockElement === canvas; $('lookhint').style.opacity = playing && !locked && !TOUCH && !menuOpen ? 1 : 0;
+document.addEventListener('pointerlockchange', () => { const was = locked; locked = document.pointerLockElement === canvas; $('lookhint').style.opacity = playing && !locked && !TOUCH && !menuOpen && !legendOn ? 1 : 0;
   if (was && !locked && playing && !menuOpen && !lockWanted) openMenu(true); lockWanted = false; });   // Esc while locked releases the cursor: that is the menu key
 const LOOK = { mouse: 0.11, touch: 0.25, pad: 150, sens: 1 };      // deg per px / deg per second at full stick; sens from the menu
 try { LOOK.sens = +localStorage.getItem('closing-sens') || 1; } catch { /* ignore */ }
@@ -401,11 +401,25 @@ function placeBoss(p) { bossS.x = p.x; bossS.z = p.z; if (p.yaw !== undefined) b
 async function bossWalk(to, ms = 1100) { anim(boss, 'walk', true, 0.2); boss.playbackSpeed = 0.7; const x0 = bossS.x, z0 = bossS.z, t0 = performance.now();
   for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k); bossS.x = x0 + (to.x - x0) * e; bossS.z = z0 + (to.z - z0) * e; boss.setPosition(bossS.x, 0.08, bossS.z); if (k >= 1) break; await wait(16); }
   boss.playbackSpeed = 1; }
+// Clips turn his torso on their own (the old send-off starts ~40 degrees off), so aiming the entity is not enough:
+// measure where his chest actually points (shoulder line) and steer the entity until the chest points at 阿輝.
+const BB = (n) => boss.armature.boneNames.findIndex((b) => b.toLowerCase() === n);
+const B_UL = BB('upperarm_l'), B_UR = BB('upperarm_r');
+const bossV = { l: new Vec3(), r: new Vec3() };
+function bossChestYaw() {
+  if (B_UL < 0 || B_UR < 0) return null;
+  const ml = boss.armature.getBoneWorldMatrix(B_UL), mr = boss.armature.getBoneWorldMatrix(B_UR); if (!ml || !mr) return null;
+  ml.getTranslation(bossV.l); mr.getTranslation(bossV.r);
+  const vx = bossV.r.x - bossV.l.x, vz = bossV.r.z - bossV.l.z;   // left shoulder to right shoulder
+  return Math.atan2(vz, -vx) * 180 / Math.PI;                      // forward = up x (R - L)
+}
 function updateBoss(dt) {
   if (player.scene !== 'shop' || !envs.shop.entity.enabled) return;
   const want = Math.atan2(player.x - bossS.x, player.z - bossS.z) * 180 / Math.PI;   // a character at yaw 0 faces +z
-  const lim = Math.max(-160, Math.min(-20, ((want + 540) % 360) - 180));
-  bossS.yaw = angDamp(bossS.yaw, lim, bossS.rate, dt); boss.setRotation(0, bossS.yaw, 0);
+  const lim = Math.max(-170, Math.min(-10, ((want + 540) % 360) - 180));
+  const chest = bossChestYaw();
+  const err = chest === null ? ((lim - bossS.yaw + 540) % 360) - 180 : ((lim - chest + 540) % 360) - 180;
+  bossS.yaw += err * (1 - Math.exp(-bossS.rate * dt)); boss.setRotation(0, bossS.yaw, 0);
 }
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));   // frame-rate independent
 const angDamp = (cur, target, rate, dt) => { const d = ((target - cur + 540) % 360) - 180; return cur + d * (1 - Math.exp(-rate * dt)); };
@@ -474,9 +488,10 @@ scene.app.on('update', () => {
       let arm = want;
       for (; arm > 0.35; arm -= 0.05) {
         const px = pivot.x - lookDir.x * arm + rg.x * side, pz = pivot.z - lookDir.z * arm + rg.z * side;
-        if (px > b.x0 - 0.15 && px < b.x1 + 0.15 && pz > b.z0 - 0.35 && pz < zmax) break;
+        if (px > b.x0 - 0.02 && px < b.x1 + 0.02 && pz > b.z0 - 0.2 && pz < zmax) break;
       }
-      const tx = pivot.x - lookDir.x * arm + rg.x * side, ty = pivot.y + 0.28 - lookDir.y * arm, tz = pivot.z - lookDir.z * arm + rg.z * side;
+      // never leave the walkable box: if even the shortest arm pokes out, slide the camera back inside rather than into the wall
+      const tx = Math.max(b.x0 - 0.02, Math.min(b.x1 + 0.02, pivot.x - lookDir.x * arm + rg.x * side)), ty = pivot.y + 0.28 - lookDir.y * arm, tz = Math.max(b.z0 - 0.2, Math.min(zmax, pivot.z - lookDir.z * arm + rg.z * side));
       if (!camS.init) Object.assign(camS, { x: tx, y: ty, z: tz, init: true });
       camS.x = damp(camS.x, tx, 14, dt); camS.y = damp(camS.y, ty, 14, dt); camS.z = damp(camS.z, tz, 14, dt);
       cam.setPosition(camS.x, camS.y, camS.z);
@@ -490,6 +505,7 @@ scene.app.on('update', () => {
       const bob = Math.sin(player.bob) * 0.012 * Math.min(1, speed / SPEED.fwd);
       const rch = player.reach;
       let ex = player.x + f.x * (rch - 0.16 + 0.12), ez = player.z + f.z * (rch - 0.16 + 0.12); const ey = camS.eye + bob;
+      { const b = L[player.scene].bounds; ex = Math.max(b.x0 - 0.04, Math.min(b.x1 + 0.04, ex)); ez = Math.max(b.z0 - 0.1, Math.min(b.z1 + 0.1, ez)); }   // eyes stay out of the walls too
       camS.init = true; camS.x = ex; camS.y = ey; camS.z = ez;
       cam.setPosition(ex, ey, ez);
       cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
@@ -670,11 +686,8 @@ async function still(file, ms, from = 1.0, to = 1.08, ox = 0, oy = 0) {
 }
 async function frameStart() {
   frameScene(); rail.on = true; rail.p = sh.booth.from; rail.l = sh.booth.look;
-  black(1); card('present', true); await wait(1400); card(null, false);
-  const done = await still('frame-till.jpg', 8200, 1.02, 1.14, 1.5, 0.5); black(0);
-  await wait(1100); play(S.vo); caption('vo', 3800);
-  await wait(6200); black(1); await wait(500); done();
-  await wait(500); card('past', true); await wait(1500); card(null, false);
+  // no flash-forward: the night starts cold in 1989, and nothing about the notes is shown before it happens
+  black(1); await wait(400); card('past', true); await wait(1700); card(null, false);
   rail.on = false; if (!NOBODY) fai.setActive(true); envs.shop.setTint(sh.tint, DARK);
   boss.setActive(true); placeBoss(sh.boss); anim(boss, 'count', true);
   setPlayer(sh.spawn, 'shop');
@@ -707,7 +720,7 @@ async function begin() {
   $('start').style.display = 'none'; $('end').style.display = 'none'; $('langs').style.display = 'none';
   reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1; camS.init = false; toggleLegend(legendOn); $('menuBtn').style.display = 'block';
   if (!TOUCH) canvas.requestPointerLock?.();
-  setTimeout(() => { $('lookhint').style.opacity = !locked && !TOUCH ? 1 : 0; }, 400);
+  setTimeout(() => { $('lookhint').style.opacity = !locked && !TOUCH && !legendOn ? 1 : 0; }, 400);
   S.drone.volume = 0; play(S.drone); fade(S.drone, 0.16, 4000);
   await frameStart();
   frozen = false;
@@ -748,7 +761,7 @@ go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
 window.__ready = true;
-window.__debug = { handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
+window.__debug = { bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
   go(x, z, yaw = player.yaw, pitch = player.pitch) { Object.assign(player, { x, z, yaw, pitch }); },
   async show(k) { await corridorReady; envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); } };
