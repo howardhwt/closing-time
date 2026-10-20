@@ -23,16 +23,19 @@ const EYE = 1.55;
 const DARK = { r: 0.012, g: 0.026, b: 0.03 };
 const L = {
   shop: {
-    file: 'shop.spz', scale: 2.34, tint: 0.1,
-    bounds: { x0: -0.9, x1: 0.85, z0: -2.8, z1: 5.6 },   // the aisle; street door at -z
-    spawn: { x: 0.0, z: 3.8, yaw: 0 },
-    till: { x: 1.6, z: -2.4, y: 1.15 },                    // the cold green pool sits here
-    boss: { x: 2.05, z: -2.4, yaw: -90 },                  // 祥哥 behind the counter (measured)
-    note: { yaw: -40 },                                    // he turns so the note comes at you
-    exit: { x: 0.0, z: -3.05 },
-    back: { x: 0.0, z: -2.7, yaw: 180 },
-    handStand: { x: 0.3, z: -2.0, yaw: -77 },   // clear of the side wall, 祥哥 in full view
-    booth: { from: { x: 0.2, y: 1.3, z: 4.4 }, to: { x: -0.25, y: 1.15, z: 3.0 }, look: { x: -1.35, y: 0.75, z: 2.2 } },   // 輝叔's seat, empty
+    // the till scene: geometry-guided panorama from the counter, PINOC + 3 fills. Rotated so the
+    // street door is at -z and the counter at +x. Positions measured from the splat's own points.
+    file: 'till.spz', scale: 2.236, rot: -90, tint: 0.1,
+    bounds: { x0: -0.85, x1: 0.7, z0: -1.85, z1: 2.4 },   // between the drinks counter and the cashier counter
+    camMaxZ: 2.9,                                          // the deep booths were never seen: keep the shoulder camera out
+    spawn: { x: 0.05, z: 2.0, yaw: -8 },
+    till: { x: 1.43, z: -0.13, y: 1.15 },                  // the register; the cold green pool sits here
+    boss: { x: 2.25, z: -0.1, yaw: -90 },                  // 祥哥 behind the counter, facing the aisle
+    note: { yaw: -90 },                                    // you stand straight in front of him
+    exit: { x: 0.46, z: -1.85 },                           // the glass street door
+    back: { x: 0.4, z: -1.6, yaw: 180 },
+    handStand: { x: 0.05, z: -0.1, yaw: -90 },              // at the counter, the till between you
+    booth: { from: { x: 0.0, y: 1.45, z: 1.2 }, to: { x: 0.1, y: 1.4, z: 0.9 }, look: { x: 1.43, y: 1.1, z: -0.13 } },
   },
   corridor: {
     file: 'corridor2.spz', scale: 1.74, tint: 0.0,
@@ -152,6 +155,7 @@ async function loadEnv(key, onProgress) {
   const cfg = L[key];
   const url = await fetchBlob(A(cfg.file), onProgress);
   const env = await Environment.load(scene, url, { filename: key + '.spz', scale: cfg.scale, position: { x: 0, y: 1.5, z: 0 } });
+  if (cfg.rot) env.entity.rotate(0, cfg.rot, 0);
   env.setTint(cfg.tint, DARK);
   return env;
 }
@@ -187,7 +191,7 @@ function unlit(mat) {
   if (mat.diffuseMap) { mat.emissiveMap = mat.diffuseMap; mat.emissive.set(PROP_GLOW, PROP_GLOW, PROP_GLOW); }
   mat.diffuse.set(0, 0, 0); mat.update();
 }
-const bag = new Entity('bag'); bag.enabled = false; scene.app.root.addChild(bag);
+const bag = new Entity('bag', scene.app); bag.enabled = false; scene.app.root.addChild(bag);
 scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
   if (err) return; const m = asset.resource.instantiateRenderEntity();
   m.findComponents('render').forEach((r) => { r.layers = [OVERLAY]; r.meshInstances.forEach((mi) => { mi.material = mi.material.clone(); unlit(mi.material); }); });
@@ -195,9 +199,9 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
 });
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
 scene.app.assets.loadFromUrl(A('prop-note.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
-function noteEntity() { const e = new Entity('note'); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
+function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
 const floorNotes = [0, 1, 2].map(noteEntity);
-const handNotes = new Entity('handNotes'); scene.app.root.addChild(handNotes); handNotes.enabled = false;
+const handNotes = new Entity('handNotes', scene.app); scene.app.root.addChild(handNotes); handNotes.enabled = false;
 [0, 1, 2].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 7, 0); });
 const notes = { set enabled(v) { for (const n of floorNotes) n.enabled = v; } };
 const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n));
@@ -224,7 +228,7 @@ function updateProps() {
   } else handNotes.enabled = false;
 }
 function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.1, y: 0.41, z: d.z + 0.3 }; }   // origin is the handles: 0.41 m tall
-const crack = new Entity('crack');
+const crack = new Entity('crack', scene.app);
 crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled = false; scene.app.root.addChild(crack);
 { const ov = scene.app.scene.layers.getLayerByName('OverlaySplats'); if (ov) crack.render.layers = [ov.id]; }
 { const m = new StandardMaterial(); m.useLighting = false; m.diffuse.set(0, 0, 0); m.emissive.set(0, 0, 0); m.update(); crack.render.material = m; }
@@ -515,7 +519,7 @@ async function interact() {
     frozen = false; state = 'walkback'; objective('o_back');
   } else if (k === 'p_hand') {
     state = 'handover'; objective(null); frozen = true;
-    await turnTo(-77, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -12, 400);
+    await turnTo(Math.atan2(-(sh.handStand.x - player.x), -(sh.handStand.z - player.z)) * 180 / Math.PI, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -12, 400);
     act('handover', 2400); await wait(1300); carry.notes = false; play(S.money);
     caption('s_till', 2600); anim(boss, 'count', true);
     await wait(2800);
