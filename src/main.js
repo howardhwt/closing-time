@@ -185,10 +185,12 @@ await Animation.loadGlb(scene, A('idle.glb'), 'idle');
 const ANIMS = new Set(['idle']);
 await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'startle', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
   Animation.loadGlb(scene, A(`m-${n}.glb`), n).then(() => ANIMS.add(n)).catch(() => {})));
+const CLIP_TURN = new Map();
+const ACT_CLIPS = new Set(['knock', 'pickup', 'startle', 'handover']);   // character -> { clip: degrees the clip turns his hips at its first frame }
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
   if (ch.currentAnimationName === n && loop) return;
-  ch.__snap = Math.ceil(fadeS * 60) + 4;   // a new clip: the steering follows its body turn frame by frame through the crossfade
+  ch.__snap = ch === boss ? Math.ceil(fadeS * 60) + 4 : 0;
   try { ch.crossfadeTo(n, { duration: fadeS, loop: n === 'idle' ? true : loop }); } catch { ch.playAnimation(n, { loop }); }
 }
 const boss = await Character.load(scene, A('xiangge.vsplat'));
@@ -239,7 +241,8 @@ const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowe
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const carry = { bag: false, notes: false, pocket: false };
-let demoOn = false;   // the scripted demo shows held props on the outside cameras too
+let demoOn = false;
+const bagS = { x: 0, y: 0, z: 0, init: false };   // the scripted demo shows held props on the outside cameras too
 const floorPose = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, r: 0 }));
 let bagAt = null;
 function updateProps() {
@@ -251,7 +254,8 @@ function updateProps() {
   const third = view === 'third' && !NOBODY;
   if (carry.bag && ((!rail.on && !third) || demoOn)) {
     const out = rail.on || third; const p = out ? handAt(HAND_L) : heldAt(-0.26, 0.22, 0.55);
-    if (p && !(out && behindBody(p))) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
+    if (p) { bag.enabled = true; const k = bagS.init ? 0.35 : 1; bagS.x += (p.x - bagS.x) * k; bagS.y += (p.y - 0.02 - bagS.y) * k; bagS.z += (p.z - bagS.z) * k; bagS.init = true;
+      bag.setPosition(bagS.x, bagS.y, bagS.z); bag.setEulerAngles(0, (out ? faiWant + faiFix : camS.bodyYaw + 180) + Math.sin(player.bob * 0.5) * 4, Math.sin(player.bob) * 3); } else bag.enabled = false;
   } else if (bagAt && corridor && !(third && behindBody(bagAt))) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
   else bag.enabled = false;
   floorNotes.forEach((n, i) => { n.enabled = notesShown && !(third && behindBody(floorPose[i])); if (n.enabled) { n.setPosition(floorPose[i].x, 0.004 + i * 0.002, floorPose[i].z); n.setEulerAngles(0, floorPose[i].r, 0); } });
@@ -451,21 +455,19 @@ function bossChestYaw() {
 }
 // 阿輝 too: clips carry their own body turn (the knock starts turned away), so steer by his hips toward where he should face.
 // On a new clip the correction snaps in one frame (a pose cut) instead of letting him spin round.
-let faiWant = 180, faiFix = 0;
+let faiWant = 180, faiFix = 0, measuring = false;
 const FB = (n) => fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n);
 const F_TL = FB('thigh_l'), F_TR = FB('thigh_r');
 function faiHipYaw() { if (F_TL < 0 || F_TR < 0) return null; const ml = fai.armature.getBoneWorldMatrix(F_TL), mr = fai.armature.getBoneWorldMatrix(F_TR); if (!ml || !mr) return null;
   const l = ml.getTranslation(new Vec3()), r = mr.getTranslation(new Vec3()); return Math.atan2(r.z - l.z, -(r.x - l.x)) * 180 / Math.PI; }
-function steerFai(dt) {
-  if (NOBODY) return; const hip = faiHipYaw();
-  if (hip !== null) { const cur = faiWant + faiFix, body = ((hip - cur + 540) % 360) - 180;   // how far the clip has turned him from his entity
-    const want = ((faiWant - body - (faiWant + faiFix) + 540) % 360) - 180;                      // fix needed so his hips face faiWant
-    if (fai.__snap > 0) { faiFix += want; fai.__snap--; } else faiFix += Math.max(-2, Math.min(2, want * (1 - Math.exp(-3 * dt))));
-    faiFix = ((faiFix + 540) % 360) - 180; if (Math.abs(faiFix) > 120) faiFix = Math.sign(faiFix) * 120; }
+const steerProbe = { max: 0, on: false };
+function steerFai() {
+  if (NOBODY || measuring) return;
   fai.setRotation(0, faiWant + faiFix, 0);
+  if (steerProbe.on) { const hip = faiHipYaw(); if (hip !== null) steerProbe.max = Math.max(steerProbe.max, Math.abs(((hip - faiWant + 540) % 360) - 180)); }
 }
 function updateBoss(dt) {
-  if (player.scene !== 'shop' || !envs.shop.entity.enabled) return;
+  if (measuring || player.scene !== 'shop' || !envs.shop.entity.enabled) return;
   const want = Math.atan2(player.x - bossS.x, player.z - bossS.z) * 180 / Math.PI;   // a character at yaw 0 faces +z
   const lim = Math.max(-170, Math.min(-10, ((want + 540) % 360) - 180));
   const chest = bossChestYaw();
@@ -519,7 +521,7 @@ scene.app.on('update', () => {
   // the body: legs match the ground speed; the torso turns toward a sidestep instead of sliding
   if (!NOBODY && !rail.on) {
     let face = player.yaw;
-    if (moving && move.lx > -0.1) face = player.yaw - Math.atan2(move.lz, Math.max(0.2, move.lx)) * 180 / Math.PI * 0.8;
+    if (moving && move.lx > -0.1 && !player.auto && !frozen) face = player.yaw - Math.atan2(move.lz, Math.max(0.2, move.lx)) * 180 / Math.PI * 0.8;
     camS.bodyYaw = camS.init ? angDamp(camS.bodyYaw, face, 12, dt) : face;
     const off = view === 'third' ? 0 : 0.16; fai.setPosition(player.x - f.x * off, 0.08, player.z - f.z * off);
     faiWant = camS.bodyYaw + 180;
@@ -856,6 +858,34 @@ function startRecorder(kind) {
   return () => new Promise((res) => { rec.onstop = () => { scene.app.off('frameend', frame); const b = new Blob(chunks, { type: mime });
     const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `closing-time-${kind}-${lang}.${mime.includes('mp4') ? 'mp4' : 'webm'}`; document.body.appendChild(a); a.click(); res(); }; rec.stop(); });
 }
+// Demo score: a synthesized tritone drone on the music bus. Swells toward the door, cuts to silence on the knock, hits when the door gives.
+const score = { nodes: null };
+function scoreStart(level = 0.5, ms = 2000) {
+  if (!actx || !buses.music) return; if (score.nodes) return scoreLevel(level, ms);
+  const now = actx.currentTime, out = actx.createGain(); out.gain.value = 0; out.connect(buses.music);
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220; lp.Q.value = 4; lp.connect(out);
+  const oscs = [[55, 'sawtooth', 0.35], [55.4, 'sawtooth', 0.3], [77.78, 'triangle', 0.4], [110.3, 'sine', 0.12]].map(([f, type, g]) => {
+    const o = actx.createOscillator(), og = actx.createGain(); o.type = type; o.frequency.value = f; og.gain.value = g; o.connect(og).connect(lp); o.start(now); return o; });
+  const lfo = actx.createOscillator(), lg = actx.createGain(); lfo.frequency.value = 0.13; lg.gain.value = 60; lfo.connect(lg).connect(lp.frequency); lfo.start(now);
+  score.nodes = { out, lp, oscs: [...oscs, lfo] }; scoreLevel(level, ms);
+}
+function scoreLevel(level, ms = 1000, cutoff) {
+  if (!score.nodes) return; const t = actx.currentTime, g = score.nodes.out.gain, f = score.nodes.lp.frequency;
+  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(level * 0.22, t + ms / 1000);
+  if (cutoff) { f.cancelScheduledValues(t); f.setValueAtTime(f.value, t); f.exponentialRampToValueAtTime(cutoff, t + ms / 1000); }
+}
+function scoreHit(level = 1) {
+  if (!actx || !buses.music) return; const t = actx.currentTime;
+  const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(32, t + 1.6);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5 * level, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+  o.connect(g).connect(buses.music); o.start(t); o.stop(t + 2.5);
+  const n = actx.createBufferSource(), b = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+  const bp = actx.createBiquadFilter(), ng = actx.createGain(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.7; ng.gain.value = 0.18 * level;
+  n.buffer = b; n.connect(bp).connect(ng).connect(buses.music); n.start(t);
+}
+function scoreStop(ms = 400) { if (!score.nodes) return; const s = score.nodes; score.nodes = null; const t = actx.currentTime;
+  s.out.gain.cancelScheduledValues(t); s.out.gain.setValueAtTime(s.out.gain.value, t); s.out.gain.linearRampToValueAtTime(0, t + ms / 1000);
+  setTimeout(() => { for (const o of s.oscs) try { o.stop(); } catch {} s.out.disconnect(); }, ms + 100); }
 async function runDemo() {
   const recKind = Q.get('rec'); let stopRec = null;
   initAudio(); if (actx && actx.state === 'suspended') await actx.resume(); demoOn = true;
@@ -879,16 +909,18 @@ async function runDemo() {
   cam({ x: 0.02, y: 1.55, z: -2.25 }, { x: -0.15, y: 0.95, z: -3.71 });
   mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 4);
   { const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400); if (mjGain) mjGain.gain.value = mj * k; $('black').style.opacity = 1 - k; if (k >= 1) break; await wait(16); } }
-  black(0); await wait(1500); mahjongStop(); caption('s_stop', 1400); await wait(1100);
-  play(S.door); openCrack(0.13, 2400); await wait(900);
+  scoreStart(0.35, 1400);
+  black(0); await wait(1500); mahjongStop(); scoreLevel(0.12, 300); caption('s_stop', 1400); await wait(1100);
+  play(S.door); scoreHit(0.8); scoreLevel(0.6, 900, 600); openCrack(0.13, 2400); await wait(900);
   play(S.money); slideNotes();
   await dolly({ x: 0.02, y: 1.55, z: -2.25 }, { x: 0.02, y: 1.5, z: -2.3 }, { x: -0.15, y: 0.95, z: -3.71 }, { x: -0.1, y: 0.05, z: -3.0 }, 1900);
-  await wait(400);
+  await wait(400); scoreLevel(0.25, 800, 220);
   // 0:04 title
   black(1); await over(`<div class="seal" style="display:inline-block;border:2px solid var(--red);color:var(--red);font-weight:900;padding:4px 8px;font-size:14px;letter-spacing:.2em;margin-bottom:18px;transform:rotate(-3deg)">地府通用</div><div style="font-weight:900;font-size:clamp(56px,9vw,110px);letter-spacing:.12em;line-height:1">收舖</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.5em;color:var(--dim);margin-top:14px">CLOSING TIME · ${t('epTitle')}</div>`, 2300);
   notes.enabled = false; openCrack(0, 10); crack.__w = 0;
 
   // 0:07 the shop, the phone, 祥哥 answers
+  scoreStop(900);
   scene('shop'); placeBoss(sh.bossPhone); anim(boss, 'count', true);
   faiAt(0.45, 0.45, 119); anim(fai, 'idle', true);
   cam({ x: -0.46, y: 1.72, z: 1.48 }, { x: 2.2, y: 1.4, z: -0.58 });
@@ -901,7 +933,7 @@ async function runDemo() {
 
   // 0:16 the corridor: walking to the green door, the mahjong getting louder
   black(1); await wait(250); scene('corridor'); anim(fai, 'walk', true); faiAt(0, 3.2, 180);
-  mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400);
+  mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400); scoreStart(0.2, 600); scoreLevel(0.75, 5600, 700);
   { const t0 = performance.now(), z0 = 3.2, z1 = -2.5, ms = 5600;
     for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), z = z0 + (z1 - z0) * k; faiAt(0.02, z, 180); fai.playbackSpeed = 0.9;
       rail.on = true; rail.p = { x: -0.3, y: 1.7, z: z + 1.5 }; rail.l = { x: 0.05, y: 1.2, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
@@ -909,10 +941,10 @@ async function runDemo() {
   // 0:22 the knock. The room goes quiet.
   faiAt(co.knockStand.x, co.knockStand.z, 180); dropBag(); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
   cam({ x: 0.42, y: 1.55, z: -1.75 }, { x: -0.28, y: 1.15, z: -3.5 });
-  await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
+  scoreStop(250); await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
   // 0:27 the door jerks open; he backs off; the money slides out to his feet
-  play(S.door); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
+  play(S.door); scoreHit(1); scoreStart(0.7, 500); scoreLevel(0.7, 500, 650); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
   anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
     for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
       const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u; faiAt(x0, z0 - lz, 180);   // facing -z: local back is world +z
@@ -924,13 +956,13 @@ async function runDemo() {
   black(1); notes.enabled = false; openCrack(0, 10); crack.__w = 0; await wait(300);
   scene('shop'); placeBoss(sh.boss); anim(boss, 'count', true); fai.setActive(false); player.x = 0.15; player.z = -0.1;
   cam({ x: 0.15, y: 1.56, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }); card('later', true); await wait(1300); card(null, false); black(0);
-  caption('s_count', 1800);
+  caption('s_count', 1800); scoreStart(0.18, 1500); scoreLevel(0.18, 1500, 200);
   await dolly({ x: 0.15, y: 1.56, z: -0.1 }, { x: 0.42, y: 1.52, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }, { x: 2.25, y: 1.4, z: -0.1 }, 3000);
-  bossS.rate = 9; anim(boss, 'note', false, 0.5); await wait(1700);
+  bossS.rate = 9; anim(boss, 'note', false, 0.5); scoreLevel(0.5, 1700, 500); await wait(1700); scoreStop(120);
   play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
   await wait(1900);
   // half a second of the note's corner: red and green print, no face
-  { const el = $('still'); el.style.transition = 'none'; el.src = A('glimpse-note.jpg'); el.style.transform = 'scale(1.02)'; el.style.opacity = 1; await wait(600); el.style.opacity = 0; }
+  { const el = $('still'); el.style.transition = 'none'; el.src = A('glimpse-note.jpg'); el.style.transform = 'scale(1.02)'; el.style.opacity = 1; scoreHit(0.7); await wait(600); el.style.opacity = 0; }
   await wait(250); black(1); bagAt = null; carry.bag = false; S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
 
   // 0:42 cards
@@ -954,7 +986,7 @@ $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
 if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', async (e) => { e.stopImmediatePropagation(); try { await document.documentElement.requestFullscreen(); } catch { /* ignore */ } await wait(1200); runDemo(); }, { capture: true }); }
 window.__ready = true;
-window.__debug = { bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
+window.__debug = { steerProbe, faiHipYaw, get faiFix() { return faiFix; }, get faiWant() { return faiWant; }, bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
   go(x, z, yaw = player.yaw, pitch = player.pitch) { Object.assign(player, { x, z, yaw, pitch }); },
   async show(k) { await corridorReady; envs.shop.entity.enabled = k === 'shop'; envs.corridor.entity.enabled = k === 'corridor'; player.scene = k; boss.setActive(k === 'shop'); } };
