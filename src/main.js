@@ -44,7 +44,7 @@ const L = {
     bounds: { x0: -0.5, x1: 0.5, z0: -3.05, z1: 5.6 },
     spawn: { x: 0, z: 4.45, yaw: 0 },                      // at the top of the stairs, facing down the corridor to the green door
     camMaxZ: 4.5,                                          // the stairwell behind is unlit: keep the shoulder camera out of it
-    door: { x: -0.13, z: -3.71, latchX: 0.33, h: 2.05 },          // measured by projecting the floor in Chrome
+    door: { x: -0.15, z: -3.71, latchX: 0.235, h: 2.29 },         // leaf -0.55..0.24 x, 0..2.29 m tall: measured head-on from the splat (handle side right)
     knockStand: { x: -0.42, z: -2.98 },   // his knocking hand lands on the door, not the wall
     watchStand: { x: -0.15, z: -2.35 },   // one step back: the crack and the floor in view
     floorMoney: { x: -0.1, z: -2.95 },
@@ -218,14 +218,9 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
 });
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
 new Image().src = A('reveal-note.jpg');   // preload the reveal so it cuts in instantly
-// until the note at the till, it is just money: a plain, generic banknote (no real currency, no hell-note print)
-{ const c = document.createElement('canvas'); c.width = 256; c.height = 100; const g = c.getContext('2d');
-  g.fillStyle = '#9c4a3a'; g.fillRect(0, 0, 256, 100); g.strokeStyle = '#5e2a20'; g.lineWidth = 6; g.strokeRect(6, 6, 244, 88);
-  g.strokeStyle = 'rgba(240,210,180,.35)'; g.lineWidth = 2; g.strokeRect(16, 16, 224, 68);
-  g.fillStyle = 'rgba(240,215,190,.45)'; g.beginPath(); g.ellipse(190, 50, 30, 26, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = 'rgba(60,20,15,.5)'; for (let i = 0; i < 5; i++) g.fillRect(28, 28 + i * 9, 90 - i * 10, 3);
-  const tex = new Texture(scene.app.graphicsDevice, { width: 256, height: 100 }); tex.setSource(c); noteMat.emissiveMap = tex; noteMat.update(); }
-function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
+// until the note at the till, it is just money: the 1989 HSBC $100 (reference scan, downscaled and softened)
+scene.app.assets.loadFromUrl(A('prop-cash.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
+function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.158, 0.0015, 0.079); e.enabled = false; scene.app.root.addChild(e); return e; }
 const floorNotes = [0, 1, 2, 3].map(noteEntity);
 const handNotes = new Entity('handNotes', scene.app); scene.app.root.addChild(handNotes); handNotes.enabled = false;
 [0, 1, 2, 3].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 10, 0); });
@@ -243,7 +238,7 @@ const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowe
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const carry = { bag: false, notes: false, pocket: false };
-const floorPose = [{ x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }];
+const floorPose = [0, 1, 2, 3].map(() => ({ x: 0, z: 0, r: 0 }));
 let bagAt = null;
 function updateProps() {
   const corridor = player.scene === 'corridor' && envs.corridor && envs.corridor.entity.enabled;
@@ -275,8 +270,11 @@ crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled
 { const m = new StandardMaterial(); m.useLighting = false; m.diffuse.set(0, 0, 0); m.emissive.set(0, 0, 0); m.update(); crack.render.material = m; }
 async function openCrack(to, ms) {
   const d = L.corridor.door; crack.enabled = true; const w0 = crack.__w || 0; const t0 = performance.now();
-  for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k), w = w0 + (to - w0) * e; crack.__w = w;
-    crack.setLocalScale(Math.max(0.001, w), d.h, 0.02); crack.setPosition(d.latchX - w / 2, d.h / 2, d.z + 0.012); if (k >= 1) break; await wait(16); }
+  // opening: it gives with a jerk (a third of the gap in the first eighth), then creeps the rest of the way
+  const ease = (k) => to > w0 ? (k < 0.12 ? 0.35 * (k / 0.12) * (2 - k / 0.12) : 0.35 + 0.65 * (1 - Math.pow(1 - (k - 0.12) / 0.88, 3))) : k * k * (3 - 2 * k);
+  if (to > w0 && ms > 300) jolt.a = 0.012;
+  for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), w = w0 + (to - w0) * ease(k); crack.__w = w;
+    crack.setLocalScale(Math.max(0.001, w), d.h + 0.01, 0.02); crack.setPosition(d.latchX - w / 2, (d.h + 0.01) / 2, d.z + 0.012); if (k >= 1) break; await wait(16); }
   if (to <= 0.001) crack.enabled = false;
 }
 async function slideNotes() {
@@ -419,7 +417,7 @@ async function bossWalk(to, ms = 1100) { anim(boss, 'walk', true, 0.2); boss.pla
 // Clips turn his torso on their own (the old send-off starts ~40 degrees off), so aiming the entity is not enough:
 // measure where his chest actually points (shoulder line) and steer the entity until the chest points at 阿輝.
 const BB = (n) => boss.armature.boneNames.findIndex((b) => b.toLowerCase() === n);
-const B_UL = BB('upperarm_l'), B_UR = BB('upperarm_r');
+const B_UL = BB('thigh_l'), B_UR = BB('thigh_r');   // the hip line: arms gesture, hips don't
 const B_HEAD = BB('head'), B_HR = BB('hand_r');
 const bossBone = (i) => { if (i < 0) return null; const m = boss.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const bossV = { l: new Vec3(), r: new Vec3() };
@@ -436,13 +434,16 @@ function updateBoss(dt) {
   const lim = Math.max(-170, Math.min(-10, ((want + 540) % 360) - 180));
   const chest = bossChestYaw();
   const err = chest === null ? ((lim - bossS.yaw + 540) % 360) - 180 : ((lim - chest + 540) % 360) - 180;
-  bossS.yaw += err * (1 - Math.exp(-bossS.rate * dt)); boss.setRotation(0, bossS.yaw, 0);
+  bossS.yaw += Math.max(-4, Math.min(4, err * (1 - Math.exp(-bossS.rate * dt))));   // at most 4 degrees a frame: he turns, never spins
+  const off = ((bossS.yaw - lim + 540) % 360) - 180; if (Math.abs(off) > 70) bossS.yaw = lim + Math.sign(off) * 70;
+  boss.setRotation(0, bossS.yaw, 0);
 }
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));   // frame-rate independent
 const angDamp = (cur, target, rate, dt) => { const d = ((target - cur + 540) % 360) - 180; return cur + d * (1 - Math.exp(-rate * dt)); };
 const SPEED = { fwd: 1.35, back: 0.75, side: 0.9 };    // m/s, a cautious delivery boy
 const move = { vx: 0, vz: 0, lx: 0, lz: 0 };           // world velocity; local (forward/right) speed for the animation
 const camS = { x: 0, y: EYE, z: 0, eye: EYE, init: false, bodyYaw: 0 };
+const jolt = { a: 0 };   // a short camera shudder when something startles you
 const startle = { t0: 0, x0: 0, z0: 0, yaw: 0 };
 let lastPos = { x: 0, z: 0 };
 
@@ -528,6 +529,7 @@ scene.app.on('update', () => {
       cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
     }
   }
+  if (jolt.a > 0.0005) { const p = cam.getPosition(); cam.setPosition(p.x + (Math.random() - 0.5) * jolt.a, p.y + (Math.random() - 0.5) * jolt.a, p.z + (Math.random() - 0.5) * jolt.a); jolt.a *= Math.exp(-dt * 7); } else jolt.a = 0;
   updateBoss(dt); updatePool(); updateProps();
   if (DEV) $('objective').textContent = `${player.scene} x ${player.x.toFixed(2)} z ${player.z.toFixed(2)} yaw ${((player.yaw % 360) + 360) % 360 | 0} ${state}`;
 });
@@ -606,7 +608,7 @@ async function interact() {
     await wait(2800);
     caption('silence', 1800); fade(S.drone, 0.12, 900); await wait(2600);
     // the door jerks open a crack onto black; he hops back from it, frightened, eyes still on the gap
-    play(S.door); caption('s_crack', 2600); openCrack(0.13, 380);
+    play(S.door); caption('s_crack', 2600); openCrack(0.13, 1800);
     await wait(120);
     if (ANIMS.has('startle')) {
       // the clip carries its own two steps back (off4, about 0.55 m): its root motion moves the player, and the camera with him
@@ -835,12 +837,16 @@ async function runDemo() {
   const faiAt = (x, z, yaw) => { fai.setActive(!NOBODY); fai.setPosition(x, 0.08, z); fai.setRotation(0, yaw, 0); player.x = x; player.z = z; };
   const d = co.door;
 
-  // 0:00 cold open: low at the green door. The mahjong, then nothing, then the door gives and money comes out.
+  // 0:00 cold open: standing at the green door. Mahjong behind it rises out of silence, stops; the door gives; money comes out.
   scene('corridor'); fai.setActive(false); black(1);
-  cam({ x: 0.22, y: 0.42, z: -2.45 }, { x: -0.1, y: 0.18, z: -3.7 });
-  mahjongNear(0.8); play(S.mahjong, 4); await wait(300); black(0);
-  await wait(1500); mahjongStop(); await wait(700);
-  play(S.door); openCrack(0.13, 380); await wait(450); play(S.money); slideNotes(); await wait(1700);
+  cam({ x: 0.02, y: 1.55, z: -2.25 }, { x: -0.15, y: 0.95, z: -3.71 });
+  mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 4);
+  { const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400); if (mjGain) mjGain.gain.value = mj * k; $('black').style.opacity = 1 - k; if (k >= 1) break; await wait(16); } }
+  black(0); await wait(1500); mahjongStop(); caption('s_stop', 1400); await wait(1100);
+  play(S.door); openCrack(0.13, 2400); await wait(900);
+  play(S.money); slideNotes();
+  await dolly({ x: 0.02, y: 1.55, z: -2.25 }, { x: 0.02, y: 1.5, z: -2.3 }, { x: -0.15, y: 0.95, z: -3.71 }, { x: -0.1, y: 0.05, z: -3.0 }, 1900);
+  await wait(400);
   // 0:04 title
   black(1); await over(`<div class="seal" style="display:inline-block;border:2px solid var(--red);color:var(--red);font-weight:900;padding:4px 8px;font-size:14px;letter-spacing:.2em;margin-bottom:18px;transform:rotate(-3deg)">地府通用</div><div style="font-weight:900;font-size:clamp(56px,9vw,110px);letter-spacing:.12em;line-height:1">收舖</div><div style="font-family:var(--sans);font-size:13px;letter-spacing:.5em;color:var(--dim);margin-top:14px">CLOSING TIME · ${t('epTitle')}</div>`, 2300);
   notes.enabled = false; openCrack(0, 10); crack.__w = 0;
@@ -869,7 +875,7 @@ async function runDemo() {
   await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
   // 0:27 the door jerks open; he backs off; the money slides out to his feet
-  play(S.door); caption('s_crack', 2400); openCrack(0.13, 380); await wait(120);
+  play(S.door); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
   anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
     for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
       const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u; faiAt(x0, z0 - lz, 180);   // facing -z: local back is world +z
