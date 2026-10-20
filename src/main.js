@@ -190,7 +190,7 @@ const ACT_CLIPS = new Set(['knock', 'pickup', 'startle', 'handover']);   // char
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
   if (ch.currentAnimationName === n && loop) return;
-  ch.__snap = ch === boss ? Math.ceil(fadeS * 60) + 4 : 0;
+  ch.__snap = ch === boss ? Math.ceil(fadeS * 60) + 4 : 0; ch.__clip = n; ch.__t0 = performance.now();
   try { ch.crossfadeTo(n, { duration: fadeS, loop: n === 'idle' ? true : loop }); } catch { ch.playAnimation(n, { loop }); }
 }
 const boss = await Character.load(scene, A('xiangge.vsplat'));
@@ -269,6 +269,8 @@ function updateProps() {
     pocketNote.setPosition(pv.x - fx * 0.12 + rx * 0.09, pv.y - 0.05, pv.z - fz * 0.12 + rz * 0.09); pocketNote.setEulerAngles(0, camS.bodyYaw + 180, 9); } }
   $('inv').style.opacity = carry.pocket ? 1 : 0;
 }
+// He faces the door itself when he knocks, not straight down the corridor (he stands left of its middle)
+const KNOCK_YAW = Math.atan2(L.corridor.door.x - L.corridor.knockStand.x, L.corridor.door.z - L.corridor.knockStand.z) * 180 / Math.PI;
 function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.1, y: 0.41, z: d.z + 0.3 }; }   // origin is the handles: 0.41 m tall
 const crack = new Entity('crack', scene.app);
 crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled = false; scene.app.root.addChild(crack);
@@ -461,9 +463,13 @@ const F_TL = FB('thigh_l'), F_TR = FB('thigh_r');
 function faiHipYaw() { if (F_TL < 0 || F_TR < 0) return null; const ml = fai.armature.getBoneWorldMatrix(F_TL), mr = fai.armature.getBoneWorldMatrix(F_TR); if (!ml || !mr) return null;
   const l = ml.getTranslation(new Vec3()), r = mr.getTranslation(new Vec3()); return Math.atan2(r.z - l.z, -(r.x - l.x)) * 180 / Math.PI; }
 const steerProbe = { max: 0, on: false };
+// How far each clip turns his hips on its own (deg, every 0.33 s; offline FK of the thigh line). The knock swings him ~19° off the door
+// and the startle ~18° after its first steps, so the body is counter-turned by the same baked amount. Deterministic: nothing is measured live.
+const CLIP_YAW = { knock: [-1, 4, 16, 18, 19, 19, 17, 14, 10, 10, -2, -10, -16], startle: [0, -1, -2, -4, -1, -3, 17, 18, 17, 15, 18, 18, 15] };
+function clipYaw(ch) { const T = CLIP_YAW[ch.__clip]; if (!T) return 0; const k = Math.min(T.length - 1.001, (performance.now() - ch.__t0) / 1000 * (ch.playbackSpeed || 1) / 0.33), i = Math.floor(k); return T[i] + (T[i + 1] - T[i]) * (k - i); }
 function steerFai() {
   if (NOBODY || measuring) return;
-  fai.setRotation(0, faiWant + faiFix, 0);
+  fai.setRotation(0, faiWant + faiFix - clipYaw(fai), 0);
   if (steerProbe.on) { const hip = faiHipYaw(); if (hip !== null) steerProbe.max = Math.max(steerProbe.max, Math.abs(((hip - faiWant + 540) % 360) - 180)); }
 }
 function updateBoss(dt) {
@@ -638,7 +644,7 @@ async function interact() {
     await toCorridor();
   } else if (k === 'p_knock') {
     state = 'knock'; objective(null); frozen = true;
-    await turnTo(0, -4, 350); await walkTo(co.knockStand.x, co.knockStand.z);
+    await walkTo(co.knockStand.x, co.knockStand.z); await turnTo(KNOCK_YAW - 180, -4, 450);
     dropBag(); await wait(300);
     act('knock', 2600); await wait(500); play(S.knock);
     await wait(250); mahjongStop(); await wait(900); caption('s_stop', 2400);   // the room goes quiet
@@ -939,7 +945,7 @@ async function runDemo() {
       rail.on = true; rail.p = { x: -0.3, y: 1.7, z: z + 1.5 }; rail.l = { x: 0.05, y: 1.2, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
       if (k >= 1) break; await wait(16); } }
   // 0:22 the knock. The room goes quiet.
-  faiAt(co.knockStand.x, co.knockStand.z, 180); dropBag(); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
+  faiAt(co.knockStand.x, co.knockStand.z, KNOCK_YAW); dropBag(); anim(fai, 'knock', false, 0.2); fai.playbackSpeed = 1;
   cam({ x: 0.42, y: 1.55, z: -1.75 }, { x: -0.28, y: 1.15, z: -3.5 });
   scoreStop(250); await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
@@ -947,7 +953,7 @@ async function runDemo() {
   play(S.door); scoreHit(1); scoreStart(0.7, 500); scoreLevel(0.7, 500, 650); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
   anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
     for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
-      const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u; faiAt(x0, z0 - lz, 180);   // facing -z: local back is world +z
+      const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u, r = KNOCK_YAW * Math.PI / 180; faiAt(x0 + lz * Math.sin(r), z0 + lz * Math.cos(r), KNOCK_YAW);   // backs off along his own facing
       if ((performance.now() - t0) > 2600) break; await wait(16); } }
   play(S.money); slideNotes(); await dolly({ x: 0.42, y: 1.55, z: -1.75 }, { x: 0.3, y: 1.7, z: -1.45 }, { x: -0.28, y: 1.0, z: -3.5 }, { x: -0.15, y: 0.15, z: -3.0 }, 2000);
   await wait(500);
@@ -961,8 +967,8 @@ async function runDemo() {
   bossS.rate = 9; anim(boss, 'note', false, 0.5); scoreLevel(0.5, 1700, 500); await wait(1700); scoreStop(120);
   play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
   await wait(1900);
-  // half a second of the note's corner: red and green print, no face
-  { const el = $('still'); el.style.transition = 'none'; el.src = A('glimpse-note.jpg'); el.style.transform = 'scale(1.02)'; el.style.opacity = 1; scoreHit(0.7); await wait(600); el.style.opacity = 0; }
+  // under a second of the whole note in his hands, at its own framing: no crop, no zoom
+  { const el = $('still'); el.style.transition = 'none'; el.style.animation = 'none'; el.style.transform = 'none'; el.src = A('reveal-note.jpg'); await el.decode().catch(() => {}); el.style.opacity = 1; scoreHit(0.7); await wait(800); el.style.opacity = 0; }
   await wait(250); black(1); bagAt = null; carry.bag = false; S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
 
   // 0:42 cards
