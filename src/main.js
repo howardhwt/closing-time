@@ -420,6 +420,8 @@ async function bossWalk(to, ms = 1100) { anim(boss, 'walk', true, 0.2); boss.pla
 // measure where his chest actually points (shoulder line) and steer the entity until the chest points at 阿輝.
 const BB = (n) => boss.armature.boneNames.findIndex((b) => b.toLowerCase() === n);
 const B_UL = BB('upperarm_l'), B_UR = BB('upperarm_r');
+const B_HEAD = BB('head'), B_HR = BB('hand_r');
+const bossBone = (i) => { if (i < 0) return null; const m = boss.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
 const bossV = { l: new Vec3(), r: new Vec3() };
 function bossChestYaw() {
   if (B_UL < 0 || B_UR < 0) return null;
@@ -576,12 +578,16 @@ async function interact() {
   if (!playing || frozen || !promptKey) return;
   const k = promptKey; prompt(null);
   if (k === 'p_counter') {
-    state = 'call'; objective(null); frozen = true; stop(S.ring);
+    state = 'call'; objective(null); frozen = true;
     bossS.rate = 5; anim(boss, 'phone', false);
+    // the phone keeps ringing until the receiver reaches his ear (1.25 s into the clip, measured on the rig);
+    // he holds it there 4 s in the clip, the call runs 6.3 s, so the clip slows while he listens
+    await wait(1250); stop(S.ring); boss.playbackSpeed = 0.62;
     play(S.call); caption('call1', 1900);
     setTimeout(() => caption('call2', 1500), 2300);
     setTimeout(() => caption('call3', 1400), 4600);
-    await wait(6600);
+    await wait((S.call.duration || 6.34) * 1000 + 200);
+    boss.playbackSpeed = 1; await wait(1700);           // he lowers the receiver
     bossS.rate = 9; anim(boss, 'send', false); play(S.order); setTimeout(() => caption('order', 3000), 100);   // turns square on to you to send you off
     await wait(3600);
     frozen = false; carry.bag = true; bossS.rate = 2.5;
