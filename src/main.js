@@ -217,14 +217,27 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
   bag.addChild(m);
 });
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
-scene.app.assets.loadFromUrl(A('prop-note.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
+// until the note at the till, it is just money: a plain, generic banknote (no real currency, no hell-note print)
+{ const c = document.createElement('canvas'); c.width = 256; c.height = 100; const g = c.getContext('2d');
+  g.fillStyle = '#9c4a3a'; g.fillRect(0, 0, 256, 100); g.strokeStyle = '#5e2a20'; g.lineWidth = 6; g.strokeRect(6, 6, 244, 88);
+  g.strokeStyle = 'rgba(240,210,180,.35)'; g.lineWidth = 2; g.strokeRect(16, 16, 224, 68);
+  g.fillStyle = 'rgba(240,215,190,.45)'; g.beginPath(); g.ellipse(190, 50, 30, 26, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(60,20,15,.5)'; for (let i = 0; i < 5; i++) g.fillRect(28, 28 + i * 9, 90 - i * 10, 3);
+  const tex = new Texture(scene.app.graphicsDevice, { width: 256, height: 100 }); tex.setSource(c); noteMat.emissiveMap = tex; noteMat.update(); }
 function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
 const floorNotes = [0, 1, 2, 3].map(noteEntity);
 const handNotes = new Entity('handNotes', scene.app); scene.app.root.addChild(handNotes); handNotes.enabled = false;
 [0, 1, 2, 3].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 10, 0); });
 // once picked up, the notes go in his back pocket: a corner shows over the pocket in third person
 const pocketNote = noteEntity(); pocketNote.setLocalScale(0.058, 0.04, 0.002);
-const notes = { set enabled(v) { for (const n of floorNotes) n.enabled = v; } };
+let notesShown = false;
+const notes = { set enabled(v) { notesShown = v; } };
+// props draw over the splats with no depth test, so anything behind 阿輝's body would paint over him: hide it instead
+function behindBody(p) {
+  const c = cam.getPosition(), bx = player.x, bz = player.z; const cx = bx - c.x, cz = bz - c.z, px = p.x - c.x, pz = p.z - c.z;
+  const d = Math.hypot(cx, cz) || 1, along = (px * cx + pz * cz) / d; if (along < d - 0.1) return false;   // in front of him
+  return Math.abs(px * cz - pz * cx) / d < 0.38;                                                          // inside his silhouette
+}
 const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n));
 const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
@@ -237,13 +250,14 @@ function updateProps() {
   const heldAt = (side, down, ahead) => { const c = cam.getPosition(), f = cam.forward, rt = cam.right, u = cam.up, sw = Math.sin(player.bob) * (player.moving ? 0.02 : 0.003);
     return { x: c.x + f.x * ahead + rt.x * side + u.x * (-down + sw), y: c.y + f.y * ahead + rt.y * side + u.y * (-down + sw), z: c.z + f.z * ahead + rt.z * side + u.z * (-down + sw) }; };
   const handAt = (i) => bonePos(i);
-  if (carry.bag && !rail.on) {
+  const third = view === 'third' && !NOBODY;
+  if (carry.bag && !rail.on && !third) {
     const p = view === 'third' ? handAt(HAND_L) : heldAt(-0.26, 0.22, 0.55);
     if (p) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
-  } else if (bagAt && corridor) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
+  } else if (bagAt && corridor && !(third && behindBody(bagAt))) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
   else bag.enabled = false;
-  floorNotes.forEach((n, i) => { if (n.enabled) { n.setPosition(floorPose[i].x, 0.004 + i * 0.002, floorPose[i].z); n.setEulerAngles(0, floorPose[i].r, 0); } });
-  if (carry.notes && !rail.on) {
+  floorNotes.forEach((n, i) => { n.enabled = notesShown && !(third && behindBody(floorPose[i])); if (n.enabled) { n.setPosition(floorPose[i].x, 0.004 + i * 0.002, floorPose[i].z); n.setEulerAngles(0, floorPose[i].r, 0); } });
+  if (carry.notes && !rail.on && !third) {
     const p = view === 'third' ? handAt(HAND_R) : heldAt(0.17, 0.26, 0.45);
     if (p) { handNotes.enabled = true; handNotes.setPosition(p.x, p.y, p.z); handNotes.setEulerAngles(view === 'third' ? 0 : 55, camS.bodyYaw + 180, 0); } else handNotes.enabled = false;
   } else handNotes.enabled = false;
@@ -325,8 +339,8 @@ document.addEventListener('pointerlockchange', () => { const was = locked; locke
 const LOOK = { mouse: 0.11, touch: 0.25, pad: 150, sens: 1 };      // deg per px / deg per second at full stick; sens from the menu
 try { LOOK.sens = +localStorage.getItem('closing-sens') || 1; } catch { /* ignore */ }
 let menuOpen = false;
-function look(dx, dy, k) {
-  if (frozen && !DEV) return;
+function look(dx, dy, k) {   // looking around is always allowed, scripted beats included
+  if (menuOpen) return;
   player.yaw -= dx * k; player.pitch = Math.max(view === 'third' ? -35 : -70, Math.min(view === 'third' ? 30 : 60, player.pitch - dy * k));
 }
 const mouse = { x: 0.5, y: 0.5, in: false };
