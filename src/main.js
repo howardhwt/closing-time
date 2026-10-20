@@ -217,7 +217,7 @@ function updateProps() {
     return { x: c.x + f.x * ahead + rt.x * side + u.x * (-down + sw), y: c.y + f.y * ahead + rt.y * side + u.y * (-down + sw), z: c.z + f.z * ahead + rt.z * side + u.z * (-down + sw) }; };
   const handAt = (i) => bonePos(i);
   if (carry.bag && !rail.on) {
-    const p = view === 'third' ? handAt(HAND_L) : heldAt(-0.22, 0.34, 0.5);
+    const p = view === 'third' ? handAt(HAND_L) : heldAt(-0.26, 0.22, 0.55);
     if (p) { bag.enabled = true; bag.setPosition(p.x, p.y, p.z); bag.setEulerAngles(0, camS.bodyYaw + 180 + Math.sin(player.bob * 0.5) * 6, Math.sin(player.bob) * 4); } else bag.enabled = false;
   } else if (bagAt && corridor) { bag.enabled = true; bag.setPosition(bagAt.x, bagAt.y, bagAt.z); bag.setEulerAngles(0, 12, 0); }
   else bag.enabled = false;
