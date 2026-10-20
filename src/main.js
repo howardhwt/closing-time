@@ -31,6 +31,7 @@ const L = {
     spawn: { x: 0.05, z: 2.0, yaw: -8 },
     till: { x: 1.43, z: -0.13, y: 1.15 },                  // the register; the cold green pool sits here
     boss: { x: 2.25, z: -0.1, yaw: -90 },                  // 祥哥 behind the counter, facing the aisle
+    bossPhone: { x: 2.2, z: -0.58, yaw: -90 },             // at the black phone while it rings
     note: { yaw: -90 },                                    // you stand straight in front of him
     exit: { x: 0.46, z: -1.85 },                           // the glass street door
     back: { x: 0.4, z: -1.6, yaw: 180 },
@@ -48,6 +49,7 @@ const L = {
     floorMoney: { x: -0.1, z: -2.95 },
     tubeAt: 2.0, gateAt: -0.9,                             // z where the dread beats fire
     exit: 5.05,                                            // into the dark stairwell, and down
+    stairs: 3.7,                                           // z where [E] Go downstairs shows
   },
 };
 if (Q.get('layout')) { try { const o = JSON.parse(Q.get('layout')); for (const k in o) Object.assign(L[k], o[k]); } catch { /* ignore */ } }
@@ -112,13 +114,29 @@ const S = {
   mahjong: snd('mahjong.mp3', { loop: true, vol: 0 }), steps: snd('steps.mp3', { loop: true, vol: 0 }),
   who: snd('who.mp3'), drone: snd('drone.mp3', { loop: true, vol: 0 }),
 };
+// Mixer: every sound goes through a bus (voice, sfx, music) and a master gain, set from the menu.
+const BUS_OF = { vo: 'voice', vo2: 'voice', call: 'voice', order: 'voice', takeaway: 'voice', who: 'voice', drone: 'music' };
+const MIX = { master: 0.9, music: 0.8, sfx: 0.9, voice: 1.0 };
+try { Object.assign(MIX, JSON.parse(localStorage.getItem('closing-mix') || '{}')); } catch { /* ignore */ }
+const buses = {};
 let actx = null, mjGain = null, mjLow = null;
 function initAudio() {
   if (actx) return; try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = actx.createMediaElementSource(S.mahjong); mjLow = actx.createBiquadFilter(); mjLow.type = 'lowpass'; mjLow.frequency.value = 400;
-    mjGain = actx.createGain(); mjGain.gain.value = 0; src.connect(mjLow).connect(mjGain).connect(actx.destination); S.mahjong.volume = 1;
+    const master = actx.createGain(); master.connect(actx.destination); buses.master = master;
+    for (const b of ['music', 'sfx', 'voice']) { buses[b] = actx.createGain(); buses[b].connect(master); }
+    applyMix();
+    for (const [k, a] of Object.entries(S)) {
+      const src = actx.createMediaElementSource(a); const bus = buses[BUS_OF[k] || 'sfx'];
+      if (k === 'mahjong') { mjLow = actx.createBiquadFilter(); mjLow.type = 'lowpass'; mjLow.frequency.value = 400;
+        mjGain = actx.createGain(); mjGain.gain.value = 0; src.connect(mjLow).connect(mjGain).connect(bus); S.mahjong.volume = 1; }
+      else src.connect(bus);
+    }
   } catch { actx = null; }
+}
+function applyMix() {
+  if (buses.master) { buses.master.gain.value = MIX.master; for (const b of ['music', 'sfx', 'voice']) buses[b].gain.value = MIX[b]; }
+  try { localStorage.setItem('closing-mix', JSON.stringify(MIX)); } catch { /* ignore */ }
 }
 function mahjongNear(d) {   // d = metres to the green door: a thin door getting thinner
   const k = Math.max(0, Math.min(1, 1 - (d - 0.6) / 7.5));
@@ -164,7 +182,7 @@ envs.shop = await loadEnv('shop', (k) => (bar.style.width = (k * 70).toFixed(1) 
 
 await Animation.loadGlb(scene, A('idle.glb'), 'idle');
 const ANIMS = new Set(['idle']);
-await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
+await Promise.all(['phone', 'send', 'count', 'note', 'walk', 'walk2', 'walkback', 'knock', 'pickup', 'handover'].map((n) =>
   Animation.loadGlb(scene, A(`m-${n}.glb`), n).then(() => ANIMS.add(n)).catch(() => {})));
 function anim(ch, name, loop = true, fadeS = 0.3) {
   const n = ANIMS.has(name) ? name : 'idle';
@@ -200,14 +218,16 @@ scene.app.assets.loadFromUrl(A('prop-bag.glb'), 'container', (err, asset) => {
 const noteMat = new StandardMaterial(); noteMat.useLighting = false; noteMat.diffuse.set(0, 0, 0); noteMat.emissive.set(0.5, 0.5, 0.47); noteMat.update();
 scene.app.assets.loadFromUrl(A('prop-note.jpg'), 'texture', (err, asset) => { if (!err) { noteMat.emissiveMap = asset.resource; noteMat.update(); } });
 function noteEntity() { const e = new Entity('note', scene.app); e.addComponent('render', { type: 'box', castShadows: false }); e.render.layers = [OVERLAY]; e.render.material = noteMat; e.setLocalScale(0.16, 0.0015, 0.062); e.enabled = false; scene.app.root.addChild(e); return e; }
-const floorNotes = [0, 1, 2].map(noteEntity);
+const floorNotes = [0, 1, 2, 3].map(noteEntity);
 const handNotes = new Entity('handNotes', scene.app); scene.app.root.addChild(handNotes); handNotes.enabled = false;
-[0, 1, 2].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 7, 0); });
+[0, 1, 2, 3].forEach((i) => { const n = noteEntity(); n.enabled = true; scene.app.root.removeChild(n); handNotes.addChild(n); n.setLocalPosition(i * 0.006, i * 0.002, i * 0.004); n.setLocalEulerAngles(0, i * 7 - 10, 0); });
+// once picked up, the notes go in his back pocket: a corner shows over the pocket in third person
+const pocketNote = noteEntity(); pocketNote.setLocalScale(0.058, 0.04, 0.002);
 const notes = { set enabled(v) { for (const n of floorNotes) n.enabled = v; } };
 const BONE = (n) => Math.max(0, fai.armature.boneNames.findIndex((b) => b.toLowerCase() === n));
-const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r');
+const HAND_L = BONE('hand_l'), HAND_R = BONE('hand_r'), PELVIS = BONE('pelvis');
 const bonePos = (i) => { const m = fai.armature.getBoneWorldMatrix(i); return m ? m.getTranslation(new Vec3()) : null; };
-const carry = { bag: false, notes: false };
+const carry = { bag: false, notes: false, pocket: false };
 const floorPose = [{ x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }, { x: 0, z: 0, r: 0 }];
 let bagAt = null;
 function updateProps() {
@@ -226,6 +246,11 @@ function updateProps() {
     const p = view === 'third' ? handAt(HAND_R) : heldAt(0.17, 0.26, 0.45);
     if (p) { handNotes.enabled = true; handNotes.setPosition(p.x, p.y, p.z); handNotes.setEulerAngles(view === 'third' ? 0 : 55, camS.bodyYaw + 180, 0); } else handNotes.enabled = false;
   } else handNotes.enabled = false;
+  const showPocket = carry.pocket && !carry.notes && view === 'third' && !rail.on && !NOBODY;
+  pocketNote.enabled = showPocket;
+  if (showPocket) { const pv = bonePos(PELVIS); if (pv) { const b = camS.bodyYaw * Math.PI / 180, fx = -Math.sin(b), fz = -Math.cos(b), rx = -fz, rz = fx;
+    pocketNote.setPosition(pv.x - fx * 0.12 + rx * 0.09, pv.y - 0.05, pv.z - fz * 0.12 + rz * 0.09); pocketNote.setEulerAngles(0, camS.bodyYaw + 180, 9); } }
+  $('inv').style.opacity = carry.pocket ? 1 : 0;
 }
 function dropBag() { carry.bag = false; const d = L.corridor.door; bagAt = { x: d.latchX - 0.1, y: 0.41, z: d.z + 0.3 }; }   // origin is the handles: 0.41 m tall
 const crack = new Entity('crack', scene.app);
@@ -240,7 +265,7 @@ async function openCrack(to, ms) {
 }
 async function slideNotes() {
   const p = L.corridor.floorMoney; const z0 = L.corridor.door.z + 0.02; const t0 = performance.now();
-  const spread = [{ x: -0.09, z: 0.0, r: 14 }, { x: 0.06, z: 0.09, r: -9 }, { x: 0.15, z: -0.05, r: 31 }];
+  const spread = [{ x: -0.09, z: 0.0, r: 14 }, { x: 0.06, z: 0.09, r: -9 }, { x: 0.15, z: -0.05, r: 31 }, { x: -0.02, z: 0.17, r: -24 }];
   notes.enabled = true;
   for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400);
     spread.forEach((sp, i) => { const ki = Math.max(0, Math.min(1, k * 1.25 - i * 0.12)), e = 1 - (1 - ki) * (1 - ki);
@@ -280,27 +305,45 @@ const BIND = {
   turnL: ['ArrowLeft', 'KeyQ'], turnR: ['ArrowRight'], interact: ['KeyE', 'Space', 'Enter'], view: ['KeyV'],
 };
 const keys = new Set();
-let locked = false, dragging = false, playing = false, frozen = false, walkHeld = false;
+let locked = false, playing = false, frozen = false, walkHeld = false;
 const held = (a) => BIND[a].some((k) => keys.has(k));
 addEventListener('keydown', (e) => {
+  if (menuOpen && e.code !== 'Escape') return;
   if (BIND.forward.concat(BIND.back, BIND.turnL, BIND.turnR, BIND.interact).includes(e.code) && playing) e.preventDefault();
   if (e.repeat) return; keys.add(e.code);
   if (BIND.interact.includes(e.code)) interact();         // edge: once per press
   if (BIND.view.includes(e.code)) toggleView();
+  if (e.code === 'Escape' && playing) { if (menuOpen) closeMenu(); else openMenu(true); }
+  if (e.code === 'KeyH' && playing) toggleLegend();
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());             // no stuck keys after alt-tab
-document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; $('lookhint').style.opacity = playing && !locked && !TOUCH ? 1 : 0; });
-const LOOK = { mouse: 0.11, touch: 0.25, pad: 150 };      // deg per px / deg per second at full stick
+let lockWanted = false;
+document.addEventListener('pointerlockchange', () => { const was = locked; locked = document.pointerLockElement === canvas; $('lookhint').style.opacity = playing && !locked && !TOUCH && !menuOpen ? 1 : 0;
+  if (was && !locked && playing && !menuOpen && !lockWanted) openMenu(true); lockWanted = false; });   // Esc while locked releases the cursor: that is the menu key
+const LOOK = { mouse: 0.11, touch: 0.25, pad: 150, sens: 1 };      // deg per px / deg per second at full stick; sens from the menu
+try { LOOK.sens = +localStorage.getItem('closing-sens') || 1; } catch { /* ignore */ }
+let menuOpen = false;
 function look(dx, dy, k) {
   if (frozen && !DEV) return;
   player.yaw -= dx * k; player.pitch = Math.max(view === 'third' ? -35 : -70, Math.min(view === 'third' ? 30 : 60, player.pitch - dy * k));
 }
+const mouse = { x: 0.5, y: 0.5, in: false };
 if (!TOUCH) {
-  canvas.addEventListener('mousedown', () => { if (!playing && !DEV) return; if (!locked) { canvas.requestPointerLock?.(); dragging = true; } else interact(); });
-  addEventListener('mouseup', () => (dragging = false));
-  addEventListener('mousemove', (e) => { if (!(playing || DEV) || !(locked || dragging)) return; look(e.movementX, e.movementY, LOOK.mouse); });
-} else {
+  // the view follows the mouse with no click needed; clicking locks the cursor for unlimited turning
+  canvas.addEventListener('mousedown', () => { if (!playing && !DEV) return; if (menuOpen) return; if (!locked) canvas.requestPointerLock?.(); else interact(); });
+  addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX / innerWidth; mouse.y = e.clientY / innerHeight; mouse.in = true;
+    if (!(playing || DEV) || menuOpen) return; look(e.movementX, e.movementY, LOOK.mouse * LOOK.sens);
+  });
+  document.addEventListener('mouseleave', () => (mouse.in = false));
+}
+function edgeTurn(dt) {   // unlocked cursor near the left/right edge keeps turning, so the cursor never runs out of screen
+  if (locked || TOUCH || !mouse.in || !playing || menuOpen) return;
+  const e = 0.07; let k = 0; if (mouse.x < e) k = (e - mouse.x) / e; else if (mouse.x > 1 - e) k = -(mouse.x - (1 - e)) / e;
+  if (k) look(-k * 160 * dt / (LOOK.mouse * LOOK.sens), 0, LOOK.mouse * LOOK.sens);
+}
+if (TOUCH) {
   $('touch').style.display = 'block';
   let lt = null;
   canvas.addEventListener('touchstart', (e) => { const tt = e.changedTouches[0]; lt = { id: tt.identifier, x: tt.clientX, y: tt.clientY }; }, { passive: true });
@@ -351,6 +394,18 @@ function headPos() {
   const m = fai.armature.getBoneWorldMatrix(HEAD); if (!m) return null;
   m.getTranslation(headM.pos); return headM.pos;
 }
+// 祥哥 keeps an eye on you: his body turns to follow 阿輝 around the shop, within what the counter allows
+const bossS = { x: 0, z: 0, yaw: -90, rate: 2.5, walk: null };
+function placeBoss(p) { bossS.x = p.x; bossS.z = p.z; if (p.yaw !== undefined) bossS.yaw = p.yaw; boss.setPosition(p.x, 0.08, p.z); boss.setRotation(0, bossS.yaw, 0); }
+async function bossWalk(to, ms = 1100) { anim(boss, 'walk', true, 0.2); boss.playbackSpeed = 0.7; const x0 = bossS.x, z0 = bossS.z, t0 = performance.now();
+  for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = k * k * (3 - 2 * k); bossS.x = x0 + (to.x - x0) * e; bossS.z = z0 + (to.z - z0) * e; boss.setPosition(bossS.x, 0.08, bossS.z); if (k >= 1) break; await wait(16); }
+  boss.playbackSpeed = 1; }
+function updateBoss(dt) {
+  if (player.scene !== 'shop' || !envs.shop.entity.enabled) return;
+  const want = Math.atan2(player.x - bossS.x, player.z - bossS.z) * 180 / Math.PI;   // a character at yaw 0 faces +z
+  const lim = Math.max(-160, Math.min(-20, ((want + 540) % 360) - 180));
+  bossS.yaw = angDamp(bossS.yaw, lim, bossS.rate, dt); boss.setRotation(0, bossS.yaw, 0);
+}
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));   // frame-rate independent
 const angDamp = (cur, target, rate, dt) => { const d = ((target - cur + 540) % 360) - 180; return cur + d * (1 - Math.exp(-rate * dt)); };
 const SPEED = { fwd: 1.35, back: 0.75, side: 0.9 };    // m/s, a cautious delivery boy
@@ -364,7 +419,8 @@ scene.app.on('update', () => {
   const f = fwd(), rg = { x: -f.z, z: f.x };
   // wanted local velocity from actions
   let inF = 0, inR = 0;
-  if ((playing && !frozen) || DEV) {
+  edgeTurn(dt);
+  if ((playing && !frozen && !menuOpen) || DEV) {
     if (held('forward') || walkHeld) inF += 1; if (held('back')) inF -= 1;
     if (held('right')) inR += 1; if (held('left')) inR -= 1;
     if (held('turnL')) player.yaw += 100 * dt; if (held('turnR')) player.yaw -= 100 * dt;
@@ -395,7 +451,7 @@ scene.app.on('update', () => {
     if (!player.act) {
       if (!moving) { anim(fai, 'idle', true, 0.3); fai.playbackSpeed = 1; }
       else if (move.lx < -0.1) { anim(fai, 'walkback', true, 0.25); fai.playbackSpeed = Math.max(0.5, Math.min(1.3, -move.lx / SPEED.back)); }
-      else { anim(fai, 'walk', true, 0.25); fai.playbackSpeed = Math.max(0.45, Math.min(1.3, speed / 1.45)); }
+      else { const w = state === 'walkback' && ANIMS.has('walk2') ? 'walk2' : 'walk'; anim(fai, w, true, 0.25); fai.playbackSpeed = Math.max(0.45, Math.min(1.3, speed / 1.45)); }
     }
   }
 
@@ -432,7 +488,7 @@ scene.app.on('update', () => {
       cam.lookAt(ex + lookDir.x, ey + lookDir.y, ez + lookDir.z);
     }
   }
-  updatePool(); updateProps();
+  updateBoss(dt); updatePool(); updateProps();
   if (DEV) $('objective').textContent = `${player.scene} x ${player.x.toFixed(2)} z ${player.z.toFixed(2)} yaw ${((player.yaw % 360) + 360) % 360 | 0} ${state}`;
 });
 
@@ -441,11 +497,15 @@ scene.app.on('update', () => {
 // ---------------------------------------------------------------------------
 let state = 'intro';
 const sh = L.shop, co = L.corridor;
-const beats = { tube: false, gate: false, steps: 0, stepsSaid: false, stopSaid: false };
+const beats = { tube: false, gate: false, steps: 0, stepsSaid: false, stopSaid: false, lookT: 0, walked: 0, lx: 0, lz: 0 };
 let flick = 3, stepsTail = 0;
 
 function tick(dt) {
-  if (state === 'ring') {
+  if (state === 'look') {
+    // closing time: a last look round before the phone goes
+    beats.lookT += dt; beats.walked += Math.hypot(player.x - beats.lx, player.z - beats.lz); beats.lx = player.x; beats.lz = player.z;
+    if ((beats.walked > 4 && beats.lookT > 8) || beats.lookT > 30) startRing();
+  } else if (state === 'ring') {
     S.ring.volume = Math.max(0.15, Math.min(1, 1.8 / (dist(sh.till) + 0.6)));
     prompt(near(sh.till, 1.7, 60) ? 'p_counter' : null);
   } else if (state === 'leave') prompt(near(sh.exit, 1.6, 70) ? 'p_leave' : null);
@@ -461,8 +521,10 @@ function tick(dt) {
     // footsteps that are not yours: they walk when you walk, and stop a beat after you stop
     if (player.moving) { stepsTail = 0.35; if (S.steps.paused) play(S.steps); S.steps.volume = 0.55; beats.steps += dt; if (!beats.stepsSaid && beats.steps > 1.2) { beats.stepsSaid = true; caption('s_steps', 2400); } }
     else if (!S.steps.paused) { stepsTail -= dt; if (stepsTail <= 0) { S.steps.pause(); if (!beats.stopSaid && beats.steps > 2) { beats.stopSaid = true; caption('s_stepsStop', 2600); } } }
+    prompt(player.z > co.stairs && facing({ x: 0, z: co.exit + 1 }, 70) ? 'p_stairs' : null);
     if (player.z > co.exit) toShop();
   } else if (state === 'till') prompt(near(sh.till, 1.7, 60) ? 'p_hand' : null);
+  else if (state === 'bosscall') prompt(near(sh.till, 1.8, 65) ? 'p_boss' : null);
   else prompt(null);
 }
 
@@ -477,14 +539,15 @@ async function interact() {
   const k = promptKey; prompt(null);
   if (k === 'p_counter') {
     state = 'call'; objective(null); frozen = true; stop(S.ring);
-    anim(boss, 'phone', false);
+    bossS.rate = 5; anim(boss, 'phone', false);
     play(S.call); caption('call1', 1900);
     setTimeout(() => caption('call2', 1500), 2300);
     setTimeout(() => caption('call3', 1400), 4600);
     await wait(6600);
-    anim(boss, 'send', false); play(S.order); setTimeout(() => caption('order', 3000), 100);
+    bossS.rate = 9; anim(boss, 'send', false); play(S.order); setTimeout(() => caption('order', 3000), 100);   // turns square on to you to send you off
     await wait(3600);
-    anim(boss, 'count', true); frozen = false; carry.bag = true;
+    frozen = false; carry.bag = true; bossS.rate = 2.5;
+    bossWalk(sh.boss).then(() => anim(boss, 'count', true));
     state = 'leave'; objective('o_deliver');
   } else if (k === 'p_leave') {
     state = 'travel'; objective(null);
@@ -510,7 +573,7 @@ async function interact() {
     // he picks them up without looking: eyes on the floor the whole time
     await turnTo(0, -40, 400); await walkTo(co.floorMoney.x, co.floorMoney.z + 0.55, 0.5);
     player.reach = 0.32; await turnTo(0, -50, 400);
-    act('pickup', 3400); await wait(1500); play(S.money); notes.enabled = false; carry.notes = true; await wait(1900); player.reach = 0.2;
+    act('pickup', 3400); await wait(1500); play(S.money); notes.enabled = false; carry.notes = true; await wait(1300); carry.notes = false; carry.pocket = true; await wait(600); player.reach = 0.2;
     play(S.latch); caption('s_latch', 1800); openCrack(0, 250);
     await wait(900);
     await turnTo(180, -6, 1400);       // turn your back on it
@@ -520,16 +583,24 @@ async function interact() {
   } else if (k === 'p_hand') {
     state = 'handover'; objective(null); frozen = true;
     await turnTo(Math.atan2(-(sh.handStand.x - player.x), -(sh.handStand.z - player.z)) * 180 / Math.PI, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -12, 400);
+    carry.pocket = false; carry.notes = true;            // out of the pocket, onto the counter
     act('handover', 2400); await wait(1300); carry.notes = false; play(S.money);
     caption('s_till', 2600); anim(boss, 'count', true);
-    await wait(2800);
+    // he counts; you are free to wander
+    await wait(1100); frozen = false; state = 'count1'; objective('o_wait');
+    await wait(7000);
     // later that night, closing up the till
     fadeOut(1); await wait(1100); card('later', true); await wait(1700); card(null, false);
-    anim(boss, 'count', true); player.yaw = sh.handStand.yaw; player.pitch = -8;
+    anim(boss, 'count', true); state = 'count2'; objective('o_wait');
     await wait(400); fadeOut(0); caption('s_count', 2200);
-    await wait(3800);
-    // he stops counting, turns, and holds one note out to you
-    boss.setRotation(0, sh.note.yaw, 0); anim(boss, 'note', false, 0.5);
+    await wait(7000);
+    // he stops counting and looks for you
+    anim(boss, 'idle', true, 0.5); bossS.rate = 6; state = 'bosscall'; objective('o_boss');
+  } else if (k === 'p_boss') {
+    state = 'note'; objective(null); frozen = true;
+    await turnTo(Math.atan2(-(sh.handStand.x - player.x), -(sh.handStand.z - player.z)) * 180 / Math.PI, -8, 400); await walkTo(sh.handStand.x, sh.handStand.z); await turnTo(sh.handStand.yaw, -10, 400);
+    // he holds one note out to you
+    bossS.rate = 9; anim(boss, 'note', false, 0.5);
     await wait(2400);
     $('note').classList.add('show');
     await wait(900);
@@ -538,6 +609,8 @@ async function interact() {
     $('note').classList.remove('show'); black(1); fade(S.drone, 0, 600);
     await wait(1600);
     await frameEnd();
+  } else if (k === 'p_stairs') {
+    await toShop();
   }
 }
 
@@ -555,7 +628,7 @@ async function toShop() {
   if (state !== 'walkback') return;
   state = 'travel'; frozen = true; S.steps.pause(); fadeOut(1); objective(null); await wait(1000);
   envs.corridor.entity.enabled = false; envs.shop.entity.enabled = true;
-  boss.setActive(true); placeChar(boss, sh.boss); anim(boss, 'idle', true);
+  boss.setActive(true); placeBoss(sh.boss); bossS.rate = 2.5; anim(boss, 'idle', true);
   setPlayer(sh.back, 'shop');
   await wait(500); fadeOut(0); frozen = false;
   state = 'till'; objective('o_counter');
@@ -587,7 +660,7 @@ async function frameStart() {
   await wait(6200); black(1); await wait(500); done();
   await wait(500); card('past', true); await wait(1500); card(null, false);
   rail.on = false; if (!NOBODY) fai.setActive(true); envs.shop.setTint(sh.tint, DARK);
-  boss.setActive(true); placeChar(boss, sh.boss); anim(boss, 'count', true);
+  boss.setActive(true); placeBoss(sh.boss); anim(boss, 'count', true);
   setPlayer(sh.spawn, 'shop');
   await wait(300); black(0);
 }
@@ -600,32 +673,57 @@ async function frameEnd() {
   await wait(5000); S.ring.volume = 0.7; play(S.ring); caption('s_ring', 1800); await wait(2100); stop(S.ring);
   black(1); await wait(600); done(); await wait(500);
   $('end').style.display = 'flex'; $('langs').style.display = 'flex';
-  document.exitPointerLock?.(); playing = false; state = 'end';
+  lockWanted = true; document.exitPointerLock?.(); playing = false; state = 'end'; $('legend').style.opacity = 0; $('menuBtn').style.display = 'none';
 }
 
 function reset() {
   state = 'intro'; frozen = false; rail.on = false; player.act = null;
-  Object.assign(beats, { tube: false, gate: false, steps: 0, stepsSaid: false, stopSaid: false });
+  Object.assign(beats, { tube: false, gate: false, steps: 0, stepsSaid: false, stopSaid: false, lookT: 0, walked: 0, lx: sh.spawn.x, lz: sh.spawn.z });
   envs.shop.entity.enabled = true; if (envs.corridor) envs.corridor.entity.enabled = false;
   envs.shop.setTint(sh.tint, DARK); if (envs.corridor) envs.corridor.setTint(co.tint, DARK);
-  boss.setActive(true); placeChar(boss, sh.boss); anim(boss, 'count', true);
+  boss.setActive(true); placeBoss(sh.boss); anim(boss, 'count', true);
   if (!NOBODY) fai.setActive(true);
-  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2;
+  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2; carry.pocket = false; bossS.rate = 2.5; closeMenu();
   for (const a of Object.values(S)) { a.pause(); a.currentTime = 0; }
 }
 async function begin() {
   initAudio(); if (actx && actx.state === 'suspended') actx.resume();
   $('start').style.display = 'none'; $('end').style.display = 'none'; $('langs').style.display = 'none';
-  reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1; camS.init = false;
+  reset(); playing = true; frozen = true; $('crosshair').style.opacity = TOUCH ? 0 : 1; camS.init = false; toggleLegend(legendOn); $('menuBtn').style.display = 'block';
   if (!TOUCH) canvas.requestPointerLock?.();
   setTimeout(() => { $('lookhint').style.opacity = !locked && !TOUCH ? 1 : 0; }, 400);
   S.drone.volume = 0; play(S.drone); fade(S.drone, 0.16, 4000);
   await frameStart();
   frozen = false;
-  await wait(1500);
-  if (state !== 'intro') return;
+  placeBoss(sh.bossPhone);
+  beats.lx = player.x; beats.lz = player.z; state = 'look'; objective('o_look');
+}
+function startRing() {
+  if (state !== 'look') return;
   state = 'ring'; S.ring.volume = 0.2; play(S.ring); caption('s_ring', 2000); objective('o_phone');
 }
+
+// ---------------------------------------------------------------------------
+// Menu (Esc) and the controls legend (H)
+// ---------------------------------------------------------------------------
+function openMenu(fromEsc) {
+  if (!playing || menuOpen) return; menuOpen = true; prompt(null);
+  $('menu').style.display = 'flex'; $('langs').style.display = 'flex'; $('lookhint').style.opacity = 0;
+  if (locked) { lockWanted = true; document.exitPointerLock?.(); }
+  for (const k of ['master', 'music', 'sfx', 'voice']) $('v_' + k).value = Math.round(MIX[k] * 100);
+  $('v_sens').value = Math.round(LOOK.sens * 100); $('legendChk').checked = legendOn;
+}
+function closeMenu() { if (!menuOpen) return; menuOpen = false; $('menu').style.display = 'none'; $('langs').style.display = 'none'; promptKey = null; }
+let legendOn = true;
+try { legendOn = localStorage.getItem('closing-legend') !== '0'; } catch { /* ignore */ }
+function toggleLegend(v = !legendOn) { legendOn = v; $('legend').style.opacity = legendOn && playing ? 1 : 0; try { localStorage.setItem('closing-legend', legendOn ? '1' : '0'); } catch { /* ignore */ } }
+for (const k of ['master', 'music', 'sfx', 'voice']) $('v_' + k).addEventListener('input', (e) => { MIX[k] = e.target.value / 100; applyMix(); });
+$('v_sens').addEventListener('input', (e) => { LOOK.sens = e.target.value / 100; try { localStorage.setItem('closing-sens', LOOK.sens); } catch { /* ignore */ } });
+$('legendChk').addEventListener('change', (e) => toggleLegend(e.target.checked));
+$('m_resume').addEventListener('click', () => { closeMenu(); if (!TOUCH) canvas.requestPointerLock?.(); });
+$('m_view').addEventListener('click', () => toggleView());
+$('m_restart').addEventListener('click', () => { closeMenu(); begin(); });
+$('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); if (menuOpen) closeMenu(); else openMenu(); });
 
 reset();
 const go = $('go');
