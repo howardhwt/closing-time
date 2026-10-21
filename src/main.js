@@ -867,7 +867,13 @@ function startRecorder(kind) {
 }
 // Score: synthesized music beds on the music bus, all driven by the same cues (start, level, hit, stop).
 // ?bgm=1 tritone drone · 2 detuned strings · 3 heartbeat · 4 opera percussion. Swells toward the door, silence on the knock, a hit when it gives.
-const BGM = Math.min(4, Math.max(1, +(Q.get('bgm') || 1)));
+const BGM = Q.has('bgm') ? Math.min(4, Math.max(1, +Q.get('bgm') || 1)) : 0;   // 0 = recorded score (piano strings, guitar drone)
+const SC = { drone: 'sc-drone.mp3', mid: 'sc-scrape-mid.mp3', deep: 'sc-scrape-deep.mp3', tone: 'sc-tone.mp3', hit: 'sc-hit.mp3', big: 'sc-hit-big.mp3', up: 'sc-scrape-up.mp3', high: 'sc-scrape-high.mp3' };
+const scBuf = {}; let scLoad = null;
+function loadScore() { if (scLoad || !actx) return scLoad; scLoad = Promise.all(Object.entries(SC).map(async ([k, f]) => {
+  try { scBuf[k] = await actx.decodeAudioData(await (await fetch(A(f))).arrayBuffer()); } catch { /* that cue stays silent */ } })); return scLoad; }
+function scPlay(k, gain, dest, loop = false) { const b = scBuf[k]; if (!b) return null; const src = actx.createBufferSource(), g = actx.createGain();
+  src.buffer = b; src.loop = loop; g.gain.value = gain; src.connect(g).connect(dest); src.start(); return src; }
 const score = { nodes: null, level: 0 };
 function osc(f, type, g, dest, t) { const o = actx.createOscillator(), og = actx.createGain(); o.type = type; o.frequency.value = f; og.gain.value = g; o.connect(og).connect(dest); o.start(t); return o; }
 function noiseBuf(sec, curve = 3) { const b = actx.createBuffer(1, actx.sampleRate * sec, actx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, curve); return b; }
@@ -893,16 +899,18 @@ const BEDS = {
     const tick = () => { if (!alive) return; const lv = Math.min(1, score.level); if (Math.random() < 0.06 + 0.3 * lv) { const at = actx.currentTime + 0.05; block(at); if (lv > 0.5 && Math.random() < 0.5) block(at + 0.18); } setTimeout(tick, 260); };
     setTimeout(tick, 900); return [...o, { stop() { alive = false; } }]; } },
 };
-function scoreStart(level = 0.5, ms = 2000) {
+function scoreStart(level = 0.5, ms = 2000, bed = 'drone') {
   if (!actx || !buses.music) return; if (score.nodes) return scoreLevel(level, ms);
+  if (!BGM) { const out = actx.createGain(); out.gain.value = 0; out.connect(buses.music); const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 20000; lp.connect(out);
+    score.nodes = { out, lp, oscs: [scPlay(bed, 1, lp, true)].filter(Boolean), sample: true }; return scoreLevel(level, ms); }
   const now = actx.currentTime, out = actx.createGain(); out.gain.value = 0; out.connect(buses.music);
   const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220 * BEDS[BGM].cut; lp.Q.value = BGM === 2 ? 1 : 4; lp.connect(out);
   score.nodes = { out, lp }; score.nodes.oscs = BEDS[BGM].build(lp, now); scoreLevel(level, ms);
 }
 function scoreLevel(level, ms = 1000, cutoff) {
   if (!score.nodes) return; score.level = level; const t = actx.currentTime, g = score.nodes.out.gain, f = score.nodes.lp.frequency;
-  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(level * 0.22, t + ms / 1000);
-  if (cutoff) { f.cancelScheduledValues(t); f.setValueAtTime(f.value, t); f.exponentialRampToValueAtTime(cutoff * BEDS[BGM].cut, t + ms / 1000); }
+  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(level * (score.nodes.sample ? 1 : 0.22), t + ms / 1000);
+  if (cutoff && !score.nodes.sample) { f.cancelScheduledValues(t); f.setValueAtTime(f.value, t); f.exponentialRampToValueAtTime(cutoff * BEDS[BGM].cut, t + ms / 1000); }
 }
 function gong(t, level) {   // 大鑼: inharmonic partials, the pitch sagging as it rings
   for (const [m, g] of [[1, 0.3], [1.48, 0.18], [2.03, 0.14], [2.74, 0.1], [3.6, 0.07], [5.1, 0.04]]) {
@@ -910,8 +918,9 @@ function gong(t, level) {   // 大鑼: inharmonic partials, the pitch sagging as
     og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(g * level, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 3.2 - m * 0.3); o.connect(og).connect(buses.music); o.start(t); o.stop(t + 3.3); }
   const n = actx.createBufferSource(), hp = actx.createBiquadFilter(), ng = actx.createGain(); n.buffer = noiseBuf(0.6, 4); hp.type = 'highpass'; hp.frequency.value = 2500; ng.gain.value = 0.12 * level; n.connect(hp).connect(ng).connect(buses.music); n.start(t);
 }
-function scoreHit(level = 1) {
+function scoreHit(level = 1, k = 'hit', also) {
   if (!actx || !buses.music) return; const t = actx.currentTime;
+  if (!BGM) { scPlay(k, level, buses.music); if (also) scPlay(also, level * 0.8, buses.music); return; }
   if (BGM === 4) return gong(t, level);
   const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(32, t + 1.6);
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5 * level, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
@@ -945,9 +954,9 @@ async function runDemo() {
   cam({ x: 0.02, y: 1.55, z: -2.25 }, { x: -0.15, y: 0.95, z: -3.71 });
   mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 4);
   { const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400); if (mjGain) mjGain.gain.value = mj * k; $('black').style.opacity = 1 - k; if (k >= 1) break; await wait(16); } }
-  scoreStart(0.35, 1400);
+  await loadScore(); scoreStart(0.5, 1400, 'drone');
   black(0); await wait(1500); mahjongStop(); scoreLevel(0.12, 300); caption('s_stop', 1400); await wait(1100);
-  play(S.door); scoreHit(0.8); scoreLevel(0.6, 900, 600); openCrack(0.13, 2400); await wait(900);
+  play(S.door); scoreHit(0.9, 'hit'); scoreLevel(0.7, 900, 600); openCrack(0.13, 2400); await wait(900);
   play(S.money); slideNotes();
   await dolly({ x: 0.02, y: 1.55, z: -2.25 }, { x: 0.02, y: 1.5, z: -2.3 }, { x: -0.15, y: 0.95, z: -3.71 }, { x: -0.1, y: 0.05, z: -3.0 }, 1900);
   await wait(400); scoreLevel(0.25, 800, 220);
@@ -969,7 +978,7 @@ async function runDemo() {
 
   // 0:16 the corridor: walking to the green door, the mahjong getting louder
   black(1); await wait(250); scene('corridor'); anim(fai, 'walk', true); faiAt(0, 3.2, 180);
-  mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400); scoreStart(0.2, 600); scoreLevel(0.75, 5600, 700);
+  mahjongNear(7); play(S.mahjong, 12); black(0); caption('s_mahjong', 2400); scoreStart(0.05, 300, 'mid'); scoreLevel(0.8, 5600, 700);
   { const t0 = performance.now(), z0 = 3.2, z1 = -2.5, ms = 5600;
     for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), z = z0 + (z1 - z0) * k; faiAt(0.02, z, 180); fai.playbackSpeed = 0.9;
       rail.on = true; rail.p = { x: -0.3, y: 1.7, z: z + 1.5 }; rail.l = { x: 0.05, y: 1.2, z: z - 2.0 }; mahjongNear(Math.hypot(d.x, d.z - z));
@@ -980,7 +989,7 @@ async function runDemo() {
   scoreStop(250); await wait(500); play(S.knock); await wait(1100); mahjongStop(); caption('s_stop', 2000); await wait(1200);
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
   // 0:27 the door jerks open; he backs off; the money slides out to his feet
-  play(S.door); scoreHit(1); scoreStart(0.7, 500); scoreLevel(0.7, 500, 650); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
+  play(S.door); scoreHit(1, 'big', 'up'); scoreStart(0.6, 500, 'deep'); scoreLevel(0.6, 500, 650); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
   anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
     for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
       const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u, r = KNOCK_YAW * Math.PI / 180; faiAt(x0 + lz * Math.sin(r), z0 + lz * Math.cos(r), KNOCK_YAW);   // backs off along his own facing
@@ -992,13 +1001,13 @@ async function runDemo() {
   black(1); notes.enabled = false; openCrack(0, 10); crack.__w = 0; await wait(300);
   scene('shop'); placeBoss(sh.boss); anim(boss, 'count', true); fai.setActive(false); player.x = 0.15; player.z = -0.1;
   cam({ x: 0.15, y: 1.56, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }); card('later', true); await wait(1300); card(null, false); black(0);
-  caption('s_count', 1800); scoreStart(0.18, 1500); scoreLevel(0.18, 1500, 200);
+  caption('s_count', 1800); scoreStart(0.35, 1500, 'tone'); scoreLevel(0.35, 1500, 200);
   await dolly({ x: 0.15, y: 1.56, z: -0.1 }, { x: 0.42, y: 1.52, z: -0.1 }, { x: 2.25, y: 1.25, z: -0.1 }, { x: 2.25, y: 1.4, z: -0.1 }, 3000);
-  bossS.rate = 9; anim(boss, 'note', false, 0.5); scoreLevel(0.5, 1700, 500); await wait(1700); scoreStop(120);
+  bossS.rate = 9; anim(boss, 'note', false, 0.5); scoreLevel(0.8, 1700, 500); await wait(1700); scoreStop(120);
   play(S.who, 2.4); setTimeout(() => caption('who', 2400), 350);
   await wait(1900);
   // under a second of the whole note in his hands, at its own framing: no crop, no zoom
-  { const el = $('still'); el.style.transition = 'none'; el.style.animation = 'none'; el.style.transform = 'none'; el.src = A('reveal-note.jpg'); await el.decode().catch(() => {}); el.style.opacity = 1; scoreHit(0.7); await wait(800); el.style.opacity = 0; }
+  { const el = $('still'); el.style.transition = 'none'; el.style.animation = 'none'; el.style.transform = 'none'; el.src = A('reveal-note.jpg'); await el.decode().catch(() => {}); el.style.opacity = 1; scoreHit(0.8, 'high'); await wait(800); el.style.opacity = 0; }
   await wait(250); black(1); bagAt = null; carry.bag = false; S.who.pause(); fade(S.drone, 0, 300); caption && ($('caption').style.opacity = 0);
 
   // 0:42 cards
