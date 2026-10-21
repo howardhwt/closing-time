@@ -298,7 +298,7 @@ function doorShow(on) { doorVoid.enabled = on; doorPivot.enabled = on;
   const vm = new StandardMaterial(); vm.useLighting = false; vm.diffuse.set(0, 0, 0); vm.emissive.set(0, 0, 0); vm.update(); doorVoid.render.material = vm;
   doorLeaf.addComponent('render', { type: 'box', castShadows: false }); doorLeaf.render.layers = [ovl];
   const lm = new StandardMaterial(); lm.useLighting = false; lm.diffuse.set(0, 0, 0); lm.emissive.set(0.86, 0.86, 0.86);
-  lm.update(); doorLeaf.render.material = lm;   // opaque and depth-tested: the leaf swings in front of the void
+  lm.blendType = BLEND_NORMAL; lm.opacity = 1; lm.depthTest = false; lm.update(); doorLeaf.render.material = lm;   // transparent queue: drawn after the black, always on top of it
   scene.app.assets.loadFromUrl(A('door-leaf.jpg'), 'texture', (err, asset) => { if (!err) { lm.emissiveMap = asset.resource; lm.update(); } });
   scene.app.root.addChild(doorVoid); scene.app.root.addChild(doorPivot); doorPivot.addChild(doorLeaf);
   doorVoid.enabled = false; doorPivot.enabled = false; }
