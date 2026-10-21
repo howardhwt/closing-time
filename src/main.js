@@ -970,9 +970,9 @@ async function runDemo() {
   cam({ x: 0.02, y: 1.55, z: -2.25 }, { x: -0.15, y: 0.95, z: -3.71 });
   mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 4);
   { const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400); if (mjGain) mjGain.gain.value = mj * k; $('black').style.opacity = 1 - k; if (k >= 1) break; await wait(16); } }
-  await loadScore(); scoreStart(0.5, 1400, 'drone');
-  black(0); await wait(1500); mahjongStop(); scoreLevel(0.12, 300); caption('s_stop', 1400); await wait(1100);
-  play(S.door); scoreHit(0.9, 'hit'); scoreLevel(0.7, 900, 600); openCrack(0.13, 2400); await wait(900);
+  await loadScore();   // the mahjong plays alone: no bed under it
+  black(0); await wait(1500); mahjongStop(); scoreStart(0.15, 600, 'tone'); caption('s_stop', 1400); await wait(1100);
+  play(S.door); scoreHit(0.8, 'up'); scoreLevel(0.4, 900, 600); openCrack(0.13, 2400); await wait(900);
   play(S.money); slideNotes();
   await dolly({ x: 0.02, y: 1.55, z: -2.25 }, { x: 0.02, y: 1.5, z: -2.3 }, { x: -0.15, y: 0.95, z: -3.71 }, { x: -0.1, y: 0.05, z: -3.0 }, 1900);
   await wait(400); scoreLevel(0.25, 800, 220);
