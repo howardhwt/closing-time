@@ -1,5 +1,5 @@
 import { Scene, Environment, Character, Animation } from '@viggle/splat-engine';
-import { Vec3, Entity, StandardMaterial, Texture, Asset, BLEND_NORMAL } from 'playcanvas';
+import { Vec3, Entity, StandardMaterial, Texture, Asset, BLEND_NORMAL, Layer } from 'playcanvas';
 import { LANGS, LANG_DISPLAY, T, detectLang, saveLang } from './i18n.js';
 import STARTLE_PATH from './startle-path.json';
 
@@ -282,14 +282,23 @@ crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled
 // over a black doorway. `to` is the old gap width in metres; 0.13 opens it about 22 degrees.
 const DOOR = { x0: -0.55, w: 0.79, h: 2.29 };
 const doorVoid = new Entity('doorVoid', scene.app), doorPivot = new Entity('doorPivot', scene.app), doorLeaf = new Entity('doorLeaf', scene.app);
-// The door is opaque geometry on the World layer, drawn before the splats and writing depth: the corridor's own door splats
-// behind it are hidden, and 阿輝 standing in front of it still draws over it.
-{ const ovl = scene.app.scene.layers.getLayerByName('World')?.id ?? 0;
+// Splats test no depth, so draw order decides who is in front. The door gets its own layer after the environment (it covers the
+// corridor's painted door), and while it is open a copy of 阿輝 is drawn on the next layer, so he stands in front of the door
+// instead of being cut through by it. Props stay on the overlay layer after both.
+const DOOR_LAYER = new Layer({ name: 'DoorMesh' }), FAI_TOP = new Layer({ name: 'FaiTop' });
+{ const comp = scene.app.scene.layers, ovLayer = comp.getLayerByName('OverlaySplats');
+  if (ovLayer) { comp.insert(DOOR_LAYER, comp.getOpaqueIndex(ovLayer)); comp.insert(FAI_TOP, comp.getOpaqueIndex(ovLayer)); } else { comp.push(DOOR_LAYER); comp.push(FAI_TOP); }
+  const c = scene.cameraEntity.camera; c.layers = [...c.layers, DOOR_LAYER.id, FAI_TOP.id]; }
+let faiTop = null;
+function doorShow(on) { doorVoid.enabled = on; doorPivot.enabled = on;
+  if (on && !faiTop && !NOBODY) { try { faiTop = fai.addOverlaySplat([FAI_TOP.id]); faiTop.setTint(0.08, DARK); } catch { faiTop = null; } }
+  if (!on && faiTop) { try { fai.removeOverlaySplat(faiTop); } catch { /* ignore */ } faiTop = null; } }
+{ const ovl = DOOR_LAYER.id;
   doorVoid.addComponent('render', { type: 'box', castShadows: false }); doorVoid.render.layers = [ovl];
   const vm = new StandardMaterial(); vm.useLighting = false; vm.diffuse.set(0, 0, 0); vm.emissive.set(0, 0, 0); vm.update(); doorVoid.render.material = vm;
   doorLeaf.addComponent('render', { type: 'box', castShadows: false }); doorLeaf.render.layers = [ovl];
   const lm = new StandardMaterial(); lm.useLighting = false; lm.diffuse.set(0, 0, 0); lm.emissive.set(0.86, 0.86, 0.86);
-  lm.update(); doorLeaf.render.material = lm;
+  lm.update(); doorLeaf.render.material = lm;   // opaque and depth-tested: the leaf swings in front of the void
   scene.app.assets.loadFromUrl(A('door-leaf.jpg'), 'texture', (err, asset) => { if (!err) { lm.emissiveMap = asset.resource; lm.update(); } });
   scene.app.root.addChild(doorVoid); scene.app.root.addChild(doorPivot); doorPivot.addChild(doorLeaf);
   doorVoid.enabled = false; doorPivot.enabled = false; }
@@ -304,9 +313,9 @@ async function openCrack(to, ms) {
   // it gives with a jerk (a third of the way in the first eighth), then creeps the rest
   const ease = (k) => to > w0 ? (k < 0.12 ? 0.35 * (k / 0.12) * (2 - k / 0.12) : 0.35 + 0.65 * (1 - Math.pow(1 - (k - 0.12) / 0.88, 3))) : k * k * (3 - 2 * k);
   if (to > w0 && ms > 300) jolt.a = 0.012;
-  doorVoid.enabled = true; doorPivot.enabled = true;
+  doorShow(true);
   for (;;) { const k = Math.min(1, (performance.now() - t0) / ms), e = ease(k); crack.__w = w0 + (to - w0) * e; placeDoor(A0 + (A1 - A0) * e); if (k >= 1) break; await wait(16); }
-  if (to <= 0.001) { doorVoid.enabled = false; doorPivot.enabled = false; }
+  if (to <= 0.001) doorShow(false);
 }
 async function slideNotes() {
   const p = L.corridor.floorMoney; const z0 = L.corridor.door.z + 0.02; const t0 = performance.now();
@@ -789,7 +798,7 @@ function reset() {
   envs.shop.setTint(sh.tint, DARK); if (envs.corridor) envs.corridor.setTint(co.tint, DARK);
   boss.setActive(true); placeBoss(sh.boss); anim(boss, 'count', true);
   if (!NOBODY) fai.setActive(true);
-  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; doorVoid.enabled = false; doorPivot.enabled = false; player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2; carry.pocket = false; bossS.rate = 2.5; closeMenu();
+  setPlayer(sh.spawn, 'shop'); black(0); fadeOut(0); $('note').classList.remove('show'); $('still').style.opacity = 0; notes.enabled = false; crack.enabled = false; crack.__w = 0; doorShow(false); player.auto = false; carry.bag = false; carry.notes = false; bagAt = null; player.reach = 0.2; carry.pocket = false; bossS.rate = 2.5; closeMenu();
   for (const a of Object.values(S)) { a.pause(); a.currentTime = 0; }
 }
 async function begin() {
