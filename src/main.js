@@ -968,7 +968,7 @@ async function runDemo() {
   // 0:00 cold open: standing at the green door. Mahjong behind it rises out of silence, stops; the door gives; money comes out.
   scene('corridor'); fai.setActive(false); black(1);
   cam({ x: 0.02, y: 1.55, z: -2.25 }, { x: -0.15, y: 0.95, z: -3.71 });
-  mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 4);
+  mahjongNear(0.9); const mj = mjGain ? mjGain.gain.value : 1; if (mjGain) mjGain.gain.value = 0; play(S.mahjong, 10);   // 10-13 s of the blend: steady tiles
   { const t0 = performance.now(); for (;;) { const k = Math.min(1, (performance.now() - t0) / 1400); if (mjGain) mjGain.gain.value = mj * k; $('black').style.opacity = 1 - k; if (k >= 1) break; await wait(16); } }
   await loadScore();   // the mahjong plays alone: no bed under it
   black(0); await wait(1500); mahjongStop(); scoreStart(0.15, 600, 'tone'); caption('s_stop', 1400); await wait(1100);
