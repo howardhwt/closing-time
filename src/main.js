@@ -282,12 +282,14 @@ crack.addComponent('render', { type: 'box', castShadows: false }); crack.enabled
 // over a black doorway. `to` is the old gap width in metres; 0.13 opens it about 22 degrees.
 const DOOR = { x0: -0.55, w: 0.79, h: 2.29 };
 const doorVoid = new Entity('doorVoid', scene.app), doorPivot = new Entity('doorPivot', scene.app), doorLeaf = new Entity('doorLeaf', scene.app);
-{ const ovl = scene.app.scene.layers.getLayerByName('OverlaySplats')?.id ?? 0;
+// The door is opaque geometry on the World layer, drawn before the splats and writing depth: the corridor's own door splats
+// behind it are hidden, and 阿輝 standing in front of it still draws over it.
+{ const ovl = scene.app.scene.layers.getLayerByName('World')?.id ?? 0;
   doorVoid.addComponent('render', { type: 'box', castShadows: false }); doorVoid.render.layers = [ovl];
   const vm = new StandardMaterial(); vm.useLighting = false; vm.diffuse.set(0, 0, 0); vm.emissive.set(0, 0, 0); vm.update(); doorVoid.render.material = vm;
   doorLeaf.addComponent('render', { type: 'box', castShadows: false }); doorLeaf.render.layers = [ovl];
   const lm = new StandardMaterial(); lm.useLighting = false; lm.diffuse.set(0, 0, 0); lm.emissive.set(0.86, 0.86, 0.86);
-  lm.blendType = BLEND_NORMAL; lm.opacity = 1; lm.depthTest = false; lm.update(); doorLeaf.render.material = lm;   // transparent queue: drawn after the black, always on top of it
+  lm.update(); doorLeaf.render.material = lm;
   scene.app.assets.loadFromUrl(A('door-leaf.jpg'), 'texture', (err, asset) => { if (!err) { lm.emissiveMap = asset.resource; lm.update(); } });
   scene.app.root.addChild(doorVoid); scene.app.root.addChild(doorPivot); doorPivot.addChild(doorLeaf);
   doorVoid.enabled = false; doorPivot.enabled = false; }
@@ -491,6 +493,12 @@ const move = { vx: 0, vz: 0, lx: 0, lz: 0 };           // world velocity; local 
 const camS = { x: 0, y: EYE, z: 0, eye: EYE, init: false, bodyYaw: 0 };
 const jolt = { a: 0 };   // a short camera shudder when something startles you
 const startle = { t0: 0, x0: 0, z0: 0, yaw: 0 };
+// The startle clip leans in for its first ~1.1 s before he jumps back; it starts this far in, so the jump lands with the door.
+const STARTLE_SKIP = 1.0;
+function startleAt(t0) {   // his travel since the jump began, in his own frame: [side, back]
+  const P = STARTLE_PATH.xz, at = (s) => { const k = Math.min(P.length - 1.001, s / STARTLE_PATH.dt), i = Math.floor(k), u = k - i; return [P[i][0] + (P[i + 1][0] - P[i][0]) * u, P[i][1] + (P[i + 1][1] - P[i][1]) * u]; };
+  const a = at(STARTLE_SKIP), b = at(STARTLE_SKIP + (performance.now() - t0) / 1000); return [b[0] - a[0], b[1] - a[1]]; }
+function playStartle() { anim(fai, 'startle', false, 0.06); fai.playbackSpeed = 1; try { fai.animationTime = STARTLE_SKIP; } catch { /* ignore */ } fai.__t0 -= STARTLE_SKIP * 1000; }
 let lastPos = { x: 0, z: 0 };
 
 let last = performance.now();
@@ -515,8 +523,7 @@ scene.app.on('update', () => {
     if (DEV) { player.x += move.vx * dt * 2; player.z += move.vz * dt * 2; } else [player.x, player.z] = collide(player.x + move.vx * dt, player.z + move.vz * dt);
   }
   if (player.act === 'startle') {
-    const P = STARTLE_PATH.xz, k = Math.min(P.length - 1.001, (performance.now() - startle.t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
-    const lx = P[i][0] + (P[i + 1][0] - P[i][0]) * u, lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u, r = startle.yaw * Math.PI / 180;
+    const [lx, lz] = startleAt(startle.t0), r = startle.yaw * Math.PI / 180;
     [player.x, player.z] = collide(startle.x0 + lx * Math.cos(r) + lz * Math.sin(r), startle.z0 - lx * Math.sin(r) + lz * Math.cos(r));
   }
   // what actually happened this frame (covers scripted walks too) drives the legs
@@ -660,8 +667,8 @@ async function interact() {
       // the clip carries its own two steps back (off4, about 0.55 m): its root motion moves the player, and the camera with him
       // the engine plays clips in place, so his travel is replayed from the clip's own pelvis track (baked offline)
       startle.t0 = performance.now(); startle.x0 = player.x; startle.z0 = player.z; startle.yaw = camS.bodyYaw + 180;
-      player.act = 'startle'; anim(fai, 'startle', false, 0.06); fai.playbackSpeed = 1;
-      turnTo(-6, -50, 1400); await wait(3900);
+      player.act = 'startle'; playStartle();
+      turnTo(-6, -50, 1400); await wait(2900);
       player.act = null; anim(fai, 'idle', true, 0.3);
     } else {
       player.act = 'step'; turnTo(-6, -50, 900); await walkTo(co.watchStand.x, co.watchStand.z, 0.9); await wait(200); player.act = null;
@@ -990,9 +997,8 @@ async function runDemo() {
   play(S.takeaway); caption('takeaway', 1600); await wait(1900);
   // 0:27 the door jerks open; he backs off; the money slides out to his feet
   play(S.door); scoreHit(1, 'big', 'up'); scoreStart(0.6, 500, 'deep'); scoreLevel(0.6, 500, 650); caption('s_crack', 2400); openCrack(0.13, 1800); await wait(120);
-  anim(fai, 'startle', false, 0.06); { const P = STARTLE_PATH.xz, t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
-    for (;;) { const k = Math.min(P.length - 1.001, (performance.now() - t0) / 1000 / STARTLE_PATH.dt), i = Math.floor(k), u = k - i;
-      const lz = P[i][1] + (P[i + 1][1] - P[i][1]) * u, r = KNOCK_YAW * Math.PI / 180; faiAt(x0 + lz * Math.sin(r), z0 + lz * Math.cos(r), KNOCK_YAW);   // backs off along his own facing
+  playStartle(); { const t0 = performance.now(), x0 = co.knockStand.x, z0 = co.knockStand.z;
+    for (;;) { const lz = startleAt(t0)[1], r = KNOCK_YAW * Math.PI / 180; faiAt(x0 + lz * Math.sin(r), z0 + lz * Math.cos(r), KNOCK_YAW);   // backs off along his own facing
       if ((performance.now() - t0) > 2600) break; await wait(16); } }
   play(S.money); slideNotes(); await dolly({ x: 0.42, y: 1.55, z: -1.75 }, { x: 0.3, y: 1.7, z: -1.45 }, { x: -0.28, y: 1.0, z: -3.5 }, { x: -0.15, y: 0.15, z: -3.0 }, 2000);
   await wait(500);
@@ -1031,7 +1037,7 @@ go.disabled = false; applyLang();
 go.addEventListener('click', begin);
 $('again').addEventListener('click', begin);
 if (DEV) { $('start').style.display = 'none'; $('langs').style.display = 'none'; }
-if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', async (e) => { e.stopImmediatePropagation(); try { await document.documentElement.requestFullscreen(); } catch { /* ignore */ } await wait(1200); runDemo(); }, { capture: true }); }
+if (Q.has('demo')) { $('go').textContent = '▶'; $('go').addEventListener('click', async (e) => { e.stopImmediatePropagation(); $('start').style.display = 'none'; black(1); try { await document.documentElement.requestFullscreen(); } catch { /* ignore */ } await wait(4500); /* black while the browser's full-screen banner shows */ runDemo(); }, { capture: true }); }
 window.__ready = true;
 window.__debug = { steerProbe, faiHipYaw, get faiFix() { return faiFix; }, get faiWant() { return faiWant; }, bossChestYaw, bossS, handNotes, toggleView, get view() { return view; }, cam, crack, notes, bag, floorNotes, floorPose, carry, dropBag, openCrack, slideNotes, walkTo, player, L, envs, boss, fai, corridorReady, interact, begin, toCorridor, toShop, frameStart, frameEnd, rail, S,
   get state() { return state; }, set state(v) { state = v; }, get playing() { return playing; }, set playing(v) { playing = v; },
