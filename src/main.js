@@ -1015,7 +1015,7 @@ async function runDemo() {
   await over(`<div style="font-family:var(--sans);font-size:clamp(14px,1.7vw,20px);letter-spacing:.14em;color:var(--dim);margin-bottom:12px">${lang === 'en' ? 'Characters, motion and both scenes made with' : '角色、動作同場景全部用'}</div><div style="font-weight:900;font-size:clamp(34px,5vw,64px);letter-spacing:.1em">PINOC <span style="font-weight:500;font-size:.5em;letter-spacing:.2em">by Viggle</span></div>`, 2600);
   await over(`<div style="font-weight:900;font-size:clamp(28px,4vw,52px);letter-spacing:.14em">${lang === 'en' ? 'Night 1 · play free in your browser' : '第一晚 · 瀏覽器免費玩'}</div><div style="font-family:var(--sans);font-size:clamp(14px,1.8vw,22px);letter-spacing:.08em;color:var(--ink);margin-top:16px">howardhwt.github.io/closing-time</div>`, 2800);
   // Night 2, the way the game ends: the phone on the counter, and it rings again
-  { const el = $('still'); el.style.transition = 'opacity 700ms ease'; el.style.transform = 'scale(1.02)'; el.src = A('frame-phone.jpg'); el.style.opacity = 1; }
+  { const el = $('still'); el.style.zIndex = 1; el.style.transition = 'opacity 700ms ease'; el.style.transform = 'scale(1.02)'; el.src = A('frame-phone.jpg'); el.style.opacity = 1; }   // above the black, below the caption
   await wait(600); S.ring.volume = 0.7; play(S.ring);
   ov.innerHTML = `<div style="position:absolute;bottom:12%;left:0;right:0;font-weight:900;font-size:clamp(24px,3.4vw,44px);letter-spacing:.2em;text-shadow:0 2px 12px #000">${lang === 'en' ? 'Night 2 · the phone rings again' : lang === 'zh-CN' ? '第二晚 · 电话又响' : '第二晚 · 電話又響'}</div>`; ov.style.opacity = 1;
   await wait(4150); fade(S.ring, 0, 1900); { const st = $('still'), t0 = performance.now(); st.style.transition = 'none'; ov.style.transition = 'none';
